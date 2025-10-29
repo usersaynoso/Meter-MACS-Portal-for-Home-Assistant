@@ -1,0 +1,15 @@
+{
+  "domain": "meter_macs",
+  "name": "Meter MACS",
+  "version": "0.1.0",
+  "documentation": "https://portal.meter-macs.com/dashboard",
+  "issue_tracker": "https://portal.meter-macs.com/dashboard",
+  "codeowners": ["@owner"],
+  "requirements": ["beautifulsoup4==4.12.3"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "integration_type": "hub",
+  "loggers": ["custom_components.meter_macs"]
+}
+
+

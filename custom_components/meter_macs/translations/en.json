@@ -1,0 +1,41 @@
+{
+  "title": "Meter MACS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Meter MACS",
+        "data": {
+          "email": "Email address",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate",
+        "description": "Please re-enter your password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Cannot connect",
+      "unknown": "Unknown error"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Meter MACS options",
+        "data": {
+          "scan_interval_minutes": "Update interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_interval": "Invalid interval"
+    }
+  }
+}
+
+
