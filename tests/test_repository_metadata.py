@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "custom_components" / "meter_macs" / "manifest.json"
 HACS_PATH = REPO_ROOT / "hacs.json"
+README_PATH = REPO_ROOT / "README.md"
 BRAND_DIR = REPO_ROOT / "custom_components" / "meter_macs" / "brand"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
@@ -16,6 +17,7 @@ def test_hacs_json_exists_and_has_name() -> None:
     data = json.loads(HACS_PATH.read_text(encoding="utf-8"))
 
     assert data["name"] == "Meter MACS"
+    assert data["country"] == "GB"
 
 
 def test_manifest_has_github_metadata_and_real_codeowner() -> None:
@@ -26,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.5"
+    assert data["version"] == "0.1.6"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -71,6 +73,13 @@ def test_hacs_submission_workflows_exist() -> None:
     assert "home-assistant/actions/hassfest@master" in hassfest_workflow.read_text(
         encoding="utf-8"
     )
+
+
+def test_readme_contains_image_for_hacs_rendering() -> None:
+    text = README_PATH.read_text(encoding="utf-8")
+
+    assert "![Meter MACS logo]" in text
+    assert "custom_components/meter_macs/brand/logo.png" in text
 
 
 def test_agents_file_requires_manifest_version_bumps() -> None:
