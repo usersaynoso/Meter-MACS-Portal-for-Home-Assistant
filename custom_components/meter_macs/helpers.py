@@ -10,6 +10,10 @@ ENTITY_UNIQUE_ID_SUFFIXES: tuple[str, ...] = (
     "supply",
 )
 
+CONNECTED_SOCKET_STATES: frozenset[int] = frozenset({4, 7, 8})
+POWERED_OFF_SOCKET_STATES: frozenset[int] = frozenset({7})
+POWERED_ON_SOCKET_STATES: frozenset[int] = frozenset({4, 8})
+
 
 def format_meter_display_name(
     name: str,
@@ -71,6 +75,26 @@ def normalize_socket_state(value: object) -> int | None:
         return int(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def socket_is_connected(socket_state: int | None, session_type: str | None = None) -> bool:
+    if socket_state in CONNECTED_SOCKET_STATES:
+        return True
+    return session_type == "current"
+
+
+def socket_is_powered_on(socket_state: int | None, session_type: str | None = None) -> bool:
+    """Infer whether the relay is currently powered on.
+
+    Live Meter MACS responses show a connected-but-powered-off socket as state 7.
+    Other occupied states are treated as powered on, with a session-based
+    fallback when the portal omits the socket state.
+    """
+    if socket_state in POWERED_OFF_SOCKET_STATES:
+        return False
+    if socket_state in POWERED_ON_SOCKET_STATES:
+        return True
+    return session_type == "current"
 
 
 def socket_location_from_values(

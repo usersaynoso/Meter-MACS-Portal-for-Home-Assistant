@@ -11,7 +11,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import MeterMacsCoordinator
 from .api import MeterApi, Meter, SupplyActionError
-from .helpers import build_meter_device_key, format_meter_display_name
+from .helpers import (
+    build_meter_device_key,
+    format_meter_display_name,
+    socket_is_powered_on,
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -54,6 +58,7 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
         self._socket_site: Optional[str] = getattr(meter, "socket_site", None)
         self._socket_area: Optional[str] = getattr(meter, "socket_area", None)
         self._socket_location: Optional[str] = getattr(meter, "socket_location", None)
+        self._socket_state: Optional[int] = getattr(meter, "socket_state", None)
         self._attr_unique_id = f"{entry.entry_id}_{self._meter_id}_supply"
         self._attr_name = f"Meter MACS {self._display_name} Electricity Supply Switch"
 
@@ -75,7 +80,8 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
             self._socket_site = getattr(meter, "socket_site", None) or self._socket_site
             self._socket_area = getattr(meter, "socket_area", None) or self._socket_area
             self._socket_location = getattr(meter, "socket_location", None) or self._socket_location
-            if getattr(meter, "session_type", None) == "current":
+            self._socket_state = getattr(meter, "socket_state", None)
+            if socket_is_powered_on(self._socket_state, getattr(meter, "session_type", None)):
                 return True
             if self._assumed_on is None:
                 return False
@@ -95,6 +101,7 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
             "socket_site": self._socket_site,
             "socket_area": self._socket_area,
             "socket_location": self._socket_location,
+            "socket_state": self._socket_state,
             "session_type": self._session_type,
         }
 

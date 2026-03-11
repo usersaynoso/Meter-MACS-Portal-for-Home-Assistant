@@ -13,7 +13,13 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from .const import BASE_URL
-from .helpers import normalize_socket_state, parse_next_action_payload, socket_location_from_values
+from .helpers import (
+    normalize_socket_state,
+    parse_next_action_payload,
+    socket_is_connected,
+    socket_is_powered_on,
+    socket_location_from_values,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -242,14 +248,20 @@ class MeterApi:
         self._client = client
         self._server_action_url = f"{self._client._base_url.rstrip('/')}/dashboard"
 
-    async def _post_server_action(self, action_id: str, payload: list[dict]) -> dict:
+    async def _post_server_action(
+        self,
+        action_id: str,
+        payload: list[dict],
+        *,
+        content_type: str = "application/json",
+    ) -> dict:
         await self._client.ensure_logged_in()
         resp = await self._client._session.post(
             self._server_action_url,
             data=json.dumps(payload),
             headers={
                 "Accept": "text/x-component",
-                "Content-Type": "application/json",
+                "Content-Type": content_type,
                 "Next-Action": action_id,
                 "Origin": self._client._base_url,
                 "Referer": self._server_action_url,
@@ -273,6 +285,80 @@ class MeterApi:
         if resp.status != 200:
             raise ScrapeError(f"Unexpected status {resp.status} for {path}")
         return await _read_json_response(resp)
+
+    async def _verify_supply_state(
+        self,
+        site_id: str,
+        asset_id: str | int,
+        desired: str,
+        *,
+        attempts: int = 4,
+        delay_seconds: float = 2.0,
+    ) -> bool:
+        """Check whether the portal eventually applied the requested supply state.
+
+        Meter MACS can return a transient action error while the backend still
+        completes the switch a few seconds later. Poll the session endpoint
+        briefly before surfacing the error to Home Assistant.
+        """
+        for attempt in range(attempts):
+            try:
+                session = await self.fetch_asset_session(site_id, asset_id)
+            except Exception:  # noqa: BLE001
+                session = None
+            is_current = isinstance(session, dict) and session.get("type") == "current"
+            if desired == "on" and is_current:
+                return True
+            if desired == "off" and not is_current:
+                return True
+            if attempt < attempts - 1:
+                await asyncio.sleep(delay_seconds)
+        return False
+
+    async def _fetch_current_socket_state(self, site_id: str, asset_id: str | int) -> int | None:
+        try:
+            session = await self.fetch_asset_session(site_id, asset_id)
+        except Exception:  # noqa: BLE001
+            session = None
+        if isinstance(session, dict):
+            socket_state = normalize_socket_state(session.get("socketState"))
+            if socket_state is not None:
+                return socket_state
+        try:
+            details = await self.fetch_asset_details(site_id, asset_id)
+        except Exception:  # noqa: BLE001
+            return None
+        utility_types = details.get("utilityTypes") or []
+        utility = utility_types[0] if utility_types else None
+        if isinstance(utility, dict):
+            return normalize_socket_state(utility.get("socketState"))
+        return None
+
+    async def _verify_toggle_socket_state(
+        self,
+        site_id: str,
+        asset_id: str | int,
+        desired: str,
+        *,
+        attempts: int = 4,
+        delay_seconds: float = 2.0,
+    ) -> bool:
+        for attempt in range(attempts):
+            try:
+                session = await self.fetch_asset_session(site_id, asset_id)
+            except Exception:  # noqa: BLE001
+                session = None
+            session_type = session.get("type") if isinstance(session, dict) else None
+            socket_state = normalize_socket_state(session.get("socketState")) if isinstance(session, dict) else None
+            if socket_state is None:
+                socket_state = await self._fetch_current_socket_state(site_id, asset_id)
+            if desired == "off" and socket_state in {7}:
+                return True
+            if desired == "on" and socket_is_powered_on(socket_state, session_type):
+                return True
+            if attempt < attempts - 1:
+                await asyncio.sleep(delay_seconds)
+        return False
 
     async def get_session(self) -> dict:
         """Return session payload with user, sites and assets."""
@@ -434,6 +520,16 @@ class MeterApi:
             numeric_id: int | str = int(str(asset_id).lstrip("0") or "0")
         except Exception:  # noqa: BLE001
             numeric_id = asset_id
+        current_session: dict | None
+        try:
+            current_session = await self.fetch_asset_session(site_id, numeric_id)
+        except Exception:  # noqa: BLE001
+            current_session = None
+        current_session_type = current_session.get("type") if isinstance(current_session, dict) else None
+        current_socket_state = normalize_socket_state(current_session.get("socketState")) if isinstance(current_session, dict) else None
+        if current_socket_state is None:
+            current_socket_state = await self._fetch_current_socket_state(site_id, numeric_id)
+        currently_connected = socket_is_connected(current_socket_state, current_session_type)
         metadata: dict[str, Any] = {
             "requestId": str(uuid.uuid4()),
         }
@@ -443,21 +539,67 @@ class MeterApi:
             metadata["assetName"] = asset_name
 
         if desired == "off":
+            if not currently_connected:
+                return
             result = await self._post_server_action(
-                "4023489bc13848baaf82b4d577776bceda69f6f1c2",
+                "40331886541f8254292f6757c1b29bf9b2b98eb432",
                 [
                     {
                         "siteId": site_id,
                         "assetId": numeric_id,
-                        "serviceType": "electricity",
-                        "metadata": metadata,
-                    }
+                        "state": "off",
+                    },
+                    {
+                        "client": "$T",
+                        "meta": "$undefined",
+                        "mutationKey": ["toggleSocket"],
+                    },
                 ],
+                content_type="text/plain;charset=UTF-8",
             )
             payload = result.get("data", {}) if isinstance(result, dict) else {}
             if payload.get("success"):
                 return
-            message = payload.get("message") or result.get("error") or "Failed to disconnect socket"
+            message = payload.get("message") or result.get("error") or "Failed to power off socket"
+            if await self._verify_toggle_socket_state(site_id, numeric_id, desired):
+                _LOGGER.debug(
+                    "Meter MACS reported a power-off failure for asset %s at site %s, "
+                    "but the follow-up state check showed the relay switched off.",
+                    numeric_id,
+                    site_id,
+                )
+                return
+            raise SupplyActionError(str(message))
+
+        if currently_connected:
+            result = await self._post_server_action(
+                "40331886541f8254292f6757c1b29bf9b2b98eb432",
+                [
+                    {
+                        "siteId": site_id,
+                        "assetId": numeric_id,
+                        "state": "on",
+                    },
+                    {
+                        "client": "$T",
+                        "meta": "$undefined",
+                        "mutationKey": ["toggleSocket"],
+                    },
+                ],
+                content_type="text/plain;charset=UTF-8",
+            )
+            payload = result.get("data", {}) if isinstance(result, dict) else {}
+            if payload.get("success"):
+                return
+            message = payload.get("message") or result.get("error") or "Failed to power on socket"
+            if await self._verify_toggle_socket_state(site_id, numeric_id, desired):
+                _LOGGER.debug(
+                    "Meter MACS reported a power-on failure for asset %s at site %s, "
+                    "but the follow-up state check showed the relay switched on.",
+                    numeric_id,
+                    site_id,
+                )
+                return
             raise SupplyActionError(str(message))
 
         location = socket_location_from_values(socket_site, socket_area, socket_location)
@@ -482,6 +624,14 @@ class MeterApi:
         if payload.get("success"):
             return
         message = payload.get("message") or result.get("error") or "Failed to power up socket"
+        if await self._verify_supply_state(site_id, numeric_id, desired):
+            _LOGGER.debug(
+                "Meter MACS reported a power-on failure for asset %s at site %s, "
+                "but the follow-up session check showed the supply state changed.",
+                numeric_id,
+                site_id,
+            )
+            return
         raise SupplyActionError(str(message))
 
 
@@ -578,4 +728,3 @@ def parse_dashboard_for_meters(html: str) -> List[Meter]:
         )
 
     return meters
-
