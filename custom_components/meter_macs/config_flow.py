@@ -10,14 +10,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
     CONF_SCAN_INTERVAL_MINUTES,
+    CONF_SELECTED_METERS,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     MIN_SCAN_INTERVAL_MINUTES,
 )
-from .api import MeterMacsClient, AuthError
+from .api import Meter, MeterApi, MeterMacsClient, AuthError
+from .helpers import format_meter_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,22 +110,72 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         errors: Dict[str, str] = {}
+        available_meters = await self._async_get_available_meters()
+        meter_choices = {
+            meter.meter_id: format_meter_display_name(
+                meter.name,
+                getattr(meter, "asset_id", None),
+                getattr(meter, "site_id", None),
+            )
+            for meter in available_meters
+        }
+        current_selected_meters = self.config_entry.options.get(
+            CONF_SELECTED_METERS,
+            [meter.meter_id for meter in available_meters],
+        )
+        current_selected_meters = [
+            meter_id for meter_id in current_selected_meters if meter_id in meter_choices
+        ]
+
         if user_input is not None:
             try:
                 minutes = _validate_interval(user_input[CONF_SCAN_INTERVAL_MINUTES])
             except vol.Invalid:
                 errors["base"] = "invalid_interval"
             else:
-                return self.async_create_entry(title="Options", data={CONF_SCAN_INTERVAL_MINUTES: minutes})
+                data = {CONF_SCAN_INTERVAL_MINUTES: minutes}
+                if meter_choices:
+                    data[CONF_SELECTED_METERS] = list(user_input.get(CONF_SELECTED_METERS, []))
+                elif CONF_SELECTED_METERS in self.config_entry.options:
+                    data[CONF_SELECTED_METERS] = list(
+                        self.config_entry.options.get(CONF_SELECTED_METERS, [])
+                    )
+                return self.async_create_entry(title="Options", data=data)
 
         minutes = self.config_entry.options.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES)
-        data_schema = vol.Schema({
+        schema_dict: dict = {
             vol.Required(CONF_SCAN_INTERVAL_MINUTES, default=minutes): int,
-        })
+        }
+        if meter_choices:
+            schema_dict[
+                vol.Optional(
+                    CONF_SELECTED_METERS,
+                    default=current_selected_meters,
+                )
+            ] = cv.multi_select(meter_choices)
+
+        data_schema = vol.Schema(schema_dict)
         return self.async_show_form(step_id="init", data_schema=data_schema, errors=errors)
+
+    async def _async_get_available_meters(self) -> list[Meter]:
+        data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        coordinator = data.get("coordinator")
+        if coordinator and getattr(coordinator, "all_meters", None):
+            return list(coordinator.all_meters)
+
+        session = async_get_clientsession(self.hass)
+        client = MeterMacsClient(
+            session=session,
+            email=self.config_entry.data.get("email", ""),
+            password=self.config_entry.data.get("password", ""),
+        )
+        api = MeterApi(client)
+        try:
+            return await api.fetch_meters()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Unable to fetch meters for options flow", exc_info=True)
+            return []
 
 
 async def async_get_options_flow(config_entry: ConfigEntry) -> MeterMacsOptionsFlowHandler:
     return MeterMacsOptionsFlowHandler(config_entry)
-
-

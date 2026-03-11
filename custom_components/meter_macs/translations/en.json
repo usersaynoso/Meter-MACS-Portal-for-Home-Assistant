@@ -28,7 +28,8 @@
       "init": {
         "title": "Meter MACS options",
         "data": {
-          "scan_interval_minutes": "Update interval (minutes)"
+          "scan_interval_minutes": "Update interval (minutes)",
+          "selected_meters": "Assets to include"
         }
       }
     },
@@ -37,5 +38,4 @@
     }
   }
 }
-
 

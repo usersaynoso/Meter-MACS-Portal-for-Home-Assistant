@@ -25,6 +25,8 @@ If HACS cached an older invalid version before these repository changes, remove 
 - Falls back to dashboard HTML scraping if the JSON API is unavailable
 - Creates Home Assistant entities for meter balance and electricity cost per kWh
 - Exposes an electricity supply switch when the required site and asset identifiers are available
+- Groups each Meter MACS asset as its own Home Assistant device
+- Lets you choose which discovered assets are enabled from the integration options
 - Supports reauthentication through the normal Home Assistant config flow
 - Provides integration diagnostics with redacted credentials
 
@@ -42,6 +44,11 @@ Refresh behavior:
 - Default refresh interval is 15 minutes
 - The minimum allowed refresh interval is 2 minutes
 - The refresh interval is configurable from the integration options dialog after setup
+
+Asset selection behavior:
+- Each discovered asset is registered as its own Home Assistant device
+- The integration options dialog lets you choose which assets should remain enabled
+- Asset labels include the Meter MACS asset identifier when available so duplicate names are easier to distinguish
 
 ## Entities Created
 
@@ -100,6 +107,7 @@ The integration uses the account email as the unique identifier, so the same acc
 
 After setup, open the integration and configure:
 - `scan_interval_minutes`
+- `selected_meters`
 
 Validation rules:
 - Minimum value: `2`

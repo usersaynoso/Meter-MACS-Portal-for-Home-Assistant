@@ -24,7 +24,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.1"
+    assert data["version"] == "0.1.2"
 
 
 def test_local_brand_assets_exist() -> None:
@@ -37,4 +37,3 @@ def test_local_brand_assets_exist() -> None:
 
     assert BRAND_DIR.is_dir()
     assert expected_files.issubset({path.name for path in BRAND_DIR.iterdir()})
-

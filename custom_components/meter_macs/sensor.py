@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import MeterMacsCoordinator
 from .api import Meter
+from .helpers import build_meter_device_key, format_meter_display_name
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -34,16 +35,24 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
         self._entry = entry
         self._meter_id = meter.meter_id
         self._name = meter.name
+        self._display_name = format_meter_display_name(
+            meter.name,
+            getattr(meter, "asset_id", None),
+            getattr(meter, "site_id", None),
+        )
+        self._site_id = getattr(meter, "site_id", None)
+        self._asset_id = getattr(meter, "asset_id", None)
         self._attr_unique_id = f"{entry.entry_id}_{self._meter_id}_balance"
-        self._attr_name = f"Meter MACS {meter.name} Balance"
+        self._attr_name = f"Meter MACS {self._display_name} Balance"
 
     @property
     def device_info(self) -> dict[str, Any]:
         return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Meter MACS",
+            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
+            "name": f"Meter MACS {self._display_name}",
             "manufacturer": "Meter MACS",
-            "model": "Portal",
+            "model": "Electricity Asset",
+            "serial_number": str(self._asset_id or self._meter_id),
         }
 
     @property
@@ -62,7 +71,8 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
         return {
             "meter_id": self._meter_id,
             "meter_name": self._name,
-            "site_id": getattr(meter, "site_id", None) if meter else None,
+            "site_id": getattr(meter, "site_id", None) if meter else self._site_id,
+            "asset_id": getattr(meter, "asset_id", None) if meter else self._asset_id,
         }
 
 
@@ -74,16 +84,24 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
         self._entry = entry
         self._meter_id = meter.meter_id
         self._name = meter.name
+        self._display_name = format_meter_display_name(
+            meter.name,
+            getattr(meter, "asset_id", None),
+            getattr(meter, "site_id", None),
+        )
+        self._site_id = getattr(meter, "site_id", None)
+        self._asset_id = getattr(meter, "asset_id", None)
         self._attr_unique_id = f"{entry.entry_id}_{self._meter_id}_cost_per_kwh"
-        self._attr_name = f"Meter MACS {meter.name} Electricity Cost Per kWh"
+        self._attr_name = f"Meter MACS {self._display_name} Electricity Cost Per kWh"
 
     @property
     def device_info(self) -> dict[str, Any]:
         return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Meter MACS",
+            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
+            "name": f"Meter MACS {self._display_name}",
             "manufacturer": "Meter MACS",
-            "model": "Portal",
+            "model": "Electricity Asset",
+            "serial_number": str(self._asset_id or self._meter_id),
         }
 
     @property
@@ -102,8 +120,8 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
         return {
             "meter_id": self._meter_id,
             "meter_name": self._name,
-            "site_id": getattr(meter, "site_id", None) if meter else None,
+            "site_id": getattr(meter, "site_id", None) if meter else self._site_id,
+            "asset_id": getattr(meter, "asset_id", None) if meter else self._asset_id,
             "uplift_applied": 0.05,
         }
-
 

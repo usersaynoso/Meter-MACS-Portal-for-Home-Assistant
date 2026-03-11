@@ -7,6 +7,8 @@ This package:
 - Discovers meters from the portal API when available
 - Falls back to dashboard scraping when needed
 - Creates balance sensors, cost-per-kWh sensors, and supply switches where supported
+- Creates one Home Assistant device per discovered asset
+- Lets you choose which assets stay enabled from integration options
 
 ## HACS
 
