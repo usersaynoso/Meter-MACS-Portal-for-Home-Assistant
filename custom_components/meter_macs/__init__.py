@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import config_validation as cv
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import device_registry as dr
@@ -26,6 +27,7 @@ from .helpers import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -115,4 +117,3 @@ async def _async_sync_asset_registries(
             continue
         if meter_macs_keys.isdisjoint(valid_device_keys):
             device_registry.async_remove_device(device.id)
-
