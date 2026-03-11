@@ -4,6 +4,20 @@ A custom Home Assistant integration for Meter MACS prepaid electricity accounts.
 
 This integration signs in to the Meter MACS portal, discovers available sites and assets, and exposes meter data inside Home Assistant. It is designed for users who want their prepaid electricity balance, tariff information, and basic supply controls available in dashboards, automations, and notifications.
 
+## Install With HACS
+
+1. Open HACS in Home Assistant.
+2. Go to the custom repositories view.
+3. Add `https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant` as an `Integration` repository.
+4. Refresh the repository list if HACS does not show it immediately.
+5. Install `Meter MACS` from HACS.
+6. Restart Home Assistant.
+7. Go to `Settings -> Devices & Services -> Add Integration`.
+8. Search for `Meter MACS`.
+9. Enter your Meter MACS portal email address and password.
+
+If HACS cached an older invalid version before these repository changes, remove the custom repository entry and add it again so HACS refreshes the metadata and available versions.
+
 ## What This Integration Does
 
 - Authenticates against the Meter MACS portal with your existing portal credentials
@@ -60,7 +74,7 @@ Cost per kWh sensor attributes:
 Important switch limitation:
 - The switch is currently optimistic. It writes the requested on/off state and reflects that locally, but it does not yet read back the true remote supply state from the portal after each change.
 
-## Installation
+## Manual Installation
 
 This repository is currently structured for manual installation.
 
@@ -140,6 +154,7 @@ If you are modifying this integration:
 - Avoid destructive changes to authentication and entity unique IDs unless migration is planned
 - Prefer adding tests when behavior changes beyond documentation or metadata updates
 - Validate Python syntax before pushing changes
+- Publish a GitHub release for each user-facing version so HACS can install a real version instead of falling back to a commit hash
 
 ## Source
 

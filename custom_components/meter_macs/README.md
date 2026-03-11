@@ -8,6 +8,10 @@ This package:
 - Falls back to dashboard scraping when needed
 - Creates balance sensors, cost-per-kWh sensors, and supply switches where supported
 
+## HACS
+
+Add `https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant` to HACS as a custom repository of type `Integration`, then install `Meter MACS` from HACS and restart Home Assistant.
+
 ## Install
 
 1. Copy `custom_components/meter_macs/` into your Home Assistant `config/custom_components/` directory.
@@ -24,5 +28,6 @@ This package:
 - Reauthentication is supported through Home Assistant
 - The supply switch is optimistic and does not yet confirm the true portal state after a toggle
 - The integration depends on Meter MACS portal/API behavior and may require updates if the portal changes
+- Brand assets are bundled locally for Home Assistant `2026.3+`
 
 Full repository documentation lives in the root `README.md`.
