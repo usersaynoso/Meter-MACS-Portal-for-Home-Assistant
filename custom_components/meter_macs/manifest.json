@@ -2,8 +2,8 @@
   "domain": "meter_macs",
   "name": "Meter MACS",
   "version": "0.1.0",
-  "documentation": "https://portal.meter-macs.com/dashboard",
-  "issue_tracker": "https://portal.meter-macs.com/dashboard",
+  "documentation": "https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant",
+  "issue_tracker": "https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant/issues",
   "codeowners": ["@owner"],
   "requirements": ["beautifulsoup4==4.12.3"],
   "config_flow": true,
@@ -11,5 +11,4 @@
   "integration_type": "hub",
   "loggers": ["custom_components.meter_macs"]
 }
-
 
