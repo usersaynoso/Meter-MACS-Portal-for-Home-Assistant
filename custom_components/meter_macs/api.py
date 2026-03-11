@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 import json
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -12,6 +13,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from .const import BASE_URL
+from .helpers import normalize_socket_state, parse_next_action_payload, socket_location_from_values
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +35,13 @@ class Meter:
     site_id: Optional[str] = None
     asset_id: str | int | None = None
     cost_per_kwh: Optional[float] = None
+    site_db_id: str | None = None
+    asset_db_id: str | None = None
+    socket_site: str | None = None
+    socket_area: str | None = None
+    socket_location: str | None = None
+    socket_state: int | None = None
+    session_type: str | None = None
 
 
 class MeterMacsClient:
@@ -214,6 +223,10 @@ class ApiNotAvailable(Exception):
     pass
 
 
+class SupplyActionError(Exception):
+    pass
+
+
 class SiteNotFound(Exception):
     pass
 
@@ -227,6 +240,30 @@ class MeterApi:
 
     def __init__(self, client: MeterMacsClient) -> None:
         self._client = client
+        self._server_action_url = f"{self._client._base_url.rstrip('/')}/dashboard"
+
+    async def _post_server_action(self, action_id: str, payload: list[dict]) -> dict:
+        await self._client.ensure_logged_in()
+        resp = await self._client._session.post(
+            self._server_action_url,
+            data=json.dumps(payload),
+            headers={
+                "Accept": "text/x-component",
+                "Content-Type": "application/json",
+                "Next-Action": action_id,
+                "Origin": self._client._base_url,
+                "Referer": self._server_action_url,
+            },
+            allow_redirects=True,
+        )
+        if resp.status != 200:
+            raise ScrapeError(f"Unexpected status {resp.status} from server action {action_id}")
+        text = await resp.text()
+        try:
+            return parse_next_action_payload(text)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Failed to parse server action payload: %s", text[:400])
+            raise ScrapeError("Failed to parse server action response") from exc
 
     async def _get_json(self, path: str) -> dict:
         await self._client.ensure_logged_in()
@@ -286,6 +323,17 @@ class MeterApi:
             return float(rate) * 1.05
         return None
 
+    async def fetch_asset_session(self, site_id: str, asset_id: str | int) -> dict | None:
+        try:
+            numeric_id = int(str(asset_id).lstrip("0") or "0")
+        except Exception:  # noqa: BLE001
+            numeric_id = asset_id
+        data = await self._get_json(
+            f"/api/dashboard-data/{site_id}/{numeric_id}/session?utilityType=electricity"
+        )
+        session = data.get("data", {}).get("session") if isinstance(data.get("data"), dict) else None
+        return session if isinstance(session, dict) else None
+
     async def fetch_meters(self) -> List[Meter]:
         """Fetch meters with balances using discovered API endpoints.
 
@@ -302,10 +350,12 @@ class MeterApi:
         for site_entry in sites:
             site_info = site_entry.get("site", {}) or {}
             site_id = site_info.get("siteId")
+            site_db_id = site_info.get("_id")
             if not site_id:
                 continue
             for asset in site_entry.get("assets", []) or []:
                 asset_id = asset.get("assetId") or asset.get("_id")
+                asset_db_id = asset.get("_id")
                 # Normalize asset id to ensure stable unique IDs (strip leading zeros)
                 try:
                     normalized_asset_id = int(str(asset_id).lstrip("0") or "0")
@@ -319,15 +369,25 @@ class MeterApi:
                 utils = details.get("utilityTypes") or []
                 util = utils[0] if utils else None
                 balance: Optional[float] = None
+                socket_area: Optional[str] = None
+                socket_location: Optional[str] = None
+                socket_state: Optional[int] = None
                 if isinstance(util, dict):
                     bal = util.get("balance")
                     if isinstance(bal, (int, float)):
                         balance = float(bal)
+                    socket_area = util.get("areaName")
+                    socket_location = util.get("location")
+                    socket_state = normalize_socket_state(util.get("socketState"))
                 # Fetch electricity cost per kWh with 5% uplift
                 try:
                     cost_per_kwh = await self.fetch_cost_per_kwh(site_id, normalized_asset_id)
                 except Exception:  # noqa: BLE001
                     cost_per_kwh = None
+                try:
+                    asset_session = await self.fetch_asset_session(site_id, normalized_asset_id)
+                except Exception:  # noqa: BLE001
+                    asset_session = None
                 meter_unique_id = f"{site_id}_{normalized_asset_id}"
                 if meter_unique_id in seen_meter_ids:
                     continue
@@ -341,59 +401,88 @@ class MeterApi:
                         site_id=site_id,
                         asset_id=normalized_asset_id,
                         cost_per_kwh=cost_per_kwh,
+                        site_db_id=site_db_id,
+                        asset_db_id=asset_db_id,
+                        socket_site=(asset_session or {}).get("site"),
+                        socket_area=(asset_session or {}).get("area") or socket_area,
+                        socket_location=(asset_session or {}).get("location") or socket_location,
+                        socket_state=normalize_socket_state((asset_session or {}).get("socketState"))
+                        if asset_session
+                        else socket_state,
+                        session_type=(asset_session or {}).get("type"),
                     )
                 )
         return meters
 
-    async def set_supply_state(self, site_id: str, asset_id: str | int, state: str) -> None:
-        """Toggle electricity supply on/off for an asset.
-
-        Tries a set of likely API endpoints. Accepts state "on" or "off".
-        Raises ApiNotAvailable if no endpoint succeeds.
-        """
+    async def set_supply_state(
+        self,
+        site_id: str,
+        asset_id: str | int,
+        state: str,
+        *,
+        site_db_id: str | None = None,
+        asset_name: str | None = None,
+        socket_site: str | None = None,
+        socket_area: str | None = None,
+        socket_location: str | None = None,
+    ) -> None:
+        """Toggle electricity supply on/off for an asset via portal server actions."""
         desired = state.lower()
         if desired not in {"on", "off"}:
             raise ValueError("state must be 'on' or 'off'")
-
-        await self._client.ensure_logged_in()
-
-        # Convert asset id to numeric when possible (matches other API endpoints)
         try:
             numeric_id: int | str = int(str(asset_id).lstrip("0") or "0")
         except Exception:  # noqa: BLE001
             numeric_id = asset_id
+        metadata: dict[str, Any] = {
+            "requestId": str(uuid.uuid4()),
+        }
+        if site_db_id:
+            metadata["siteId"] = site_db_id
+        if asset_name:
+            metadata["assetName"] = asset_name
 
-        base = self._client._base_url.rstrip("/")
-
-        async def _try(url_path: str, payload: dict | list[dict]) -> bool:
-            url = urljoin(base + "/", url_path.lstrip("/"))
-            resp = await self._client._session.post(
-                url,
-                json=payload,
-                headers={"Accept": "application/json, text/plain, */*"},
-                allow_redirects=True,
+        if desired == "off":
+            result = await self._post_server_action(
+                "4023489bc13848baaf82b4d577776bceda69f6f1c2",
+                [
+                    {
+                        "siteId": site_id,
+                        "assetId": numeric_id,
+                        "serviceType": "electricity",
+                        "metadata": metadata,
+                    }
+                ],
             )
-            # 200/202/204 indicate success; some endpoints may return text/plain
-            if resp.status in (200, 202, 204):
-                return True
-            return False
+            payload = result.get("data", {}) if isinstance(result, dict) else {}
+            if payload.get("success"):
+                return
+            message = payload.get("message") or result.get("error") or "Failed to disconnect socket"
+            raise SupplyActionError(str(message))
 
-        # 1) Asset-specific endpoint (most likely)
-        if await _try(f"/api/sites/{site_id}/assets/{numeric_id}/supply", {"state": desired}):
+        location = socket_location_from_values(socket_site, socket_area, socket_location)
+        if location is None:
+            raise SupplyActionError(
+                "Socket location is unknown. Connect the asset in the Meter MACS portal first so the integration can learn its last socket."
+            )
+        metadata["location"] = location
+        result = await self._post_server_action(
+            "407e0ac91d042bb320d46f439aaf2fc8d474cdba7d",
+            [
+                {
+                    "siteId": site_id,
+                    "assetId": numeric_id,
+                    "serviceType": "electricity",
+                    "location": location,
+                    "metadata": metadata,
+                }
+            ],
+        )
+        payload = result.get("data", {}) if isinstance(result, dict) else {}
+        if payload.get("success"):
             return
-
-        # 2) Bulk endpoint taking an array
-        bulk_payload = [{"siteId": site_id, "assetId": numeric_id, "state": desired}]
-        if await _try("/api/assets/supply", bulk_payload):
-            return
-
-        # 3) Alternative naming
-        if await _try(f"/api/sites/{site_id}/assets/{numeric_id}/electricity/supply", {"state": desired}):
-            return
-        if await _try("/api/asset/supply", bulk_payload):
-            return
-
-        raise ApiNotAvailable("Supply toggle endpoint not available")
+        message = payload.get("message") or result.get("error") or "Failed to power up socket"
+        raise SupplyActionError(str(message))
 
 
 def parse_dashboard_for_meters(html: str) -> List[Meter]:
@@ -489,5 +578,4 @@ def parse_dashboard_for_meters(html: str) -> List[Meter]:
         )
 
     return meters
-
 

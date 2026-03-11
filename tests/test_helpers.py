@@ -19,7 +19,10 @@ build_meter_device_key = HELPERS.build_meter_device_key
 extract_meter_id_from_unique_id = HELPERS.extract_meter_id_from_unique_id
 filter_meter_ids = HELPERS.filter_meter_ids
 format_meter_display_name = HELPERS.format_meter_display_name
+normalize_socket_state = HELPERS.normalize_socket_state
+parse_next_action_payload = HELPERS.parse_next_action_payload
 selected_meter_ids_from_options = HELPERS.selected_meter_ids_from_options
+socket_location_from_values = HELPERS.socket_location_from_values
 
 
 def test_format_meter_display_name_uses_asset_id_when_available() -> None:
@@ -64,3 +67,34 @@ def test_filter_meter_ids_respects_selection() -> None:
     assert filter_meter_ids(meter_ids, None) == ["A", "B", "C"]
     assert filter_meter_ids(meter_ids, {"B"}) == ["B"]
     assert filter_meter_ids(meter_ids, set()) == []
+
+
+def test_parse_next_action_payload_extracts_record_one() -> None:
+    response_text = '\n'.join(
+        [
+            '0:{"a":"$@1"}',
+            '1:{"data":{"success":true,"message":"ok"}}',
+        ]
+    )
+
+    assert parse_next_action_payload(response_text) == {
+        "data": {"success": True, "message": "ok"}
+    }
+
+
+def test_normalize_socket_state_parses_strings_and_invalid_values() -> None:
+    assert normalize_socket_state("8") == 8
+    assert normalize_socket_state(0) == 0
+    assert normalize_socket_state(None) is None
+    assert normalize_socket_state("vacant") is None
+
+
+def test_socket_location_from_values_rejects_vacant_values() -> None:
+    assert socket_location_from_values("Blackwall Basin", "BWB Bollard 12", "1202") == {
+        "site": "Blackwall Basin",
+        "area": "BWB Bollard 12",
+        "socket": "1202",
+    }
+    assert socket_location_from_values("vacant", "BWB Bollard 12", "1202") is None
+    assert socket_location_from_values("Blackwall Basin", "vacant", "1202") is None
+    assert socket_location_from_values("Blackwall Basin", "BWB Bollard 12", "") is None

@@ -29,8 +29,11 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
                     "currency": m.currency,
                     "asset_id": getattr(m, "asset_id", None),
                     "site_id": getattr(m, "site_id", None),
+                    "socket_site": getattr(m, "socket_site", None),
+                    "socket_area": getattr(m, "socket_area", None),
+                    "socket_location": getattr(m, "socket_location", None),
+                    "session_type": getattr(m, "session_type", None),
                 }
                 for m in coordinator.data[:3]
             ]
     return diag
-

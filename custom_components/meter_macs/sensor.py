@@ -73,6 +73,9 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
             "meter_name": self._name,
             "site_id": getattr(meter, "site_id", None) if meter else self._site_id,
             "asset_id": getattr(meter, "asset_id", None) if meter else self._asset_id,
+            "socket_area": getattr(meter, "socket_area", None) if meter else None,
+            "socket_location": getattr(meter, "socket_location", None) if meter else None,
+            "session_type": getattr(meter, "session_type", None) if meter else None,
         }
 
 
@@ -122,6 +125,8 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
             "meter_name": self._name,
             "site_id": getattr(meter, "site_id", None) if meter else self._site_id,
             "asset_id": getattr(meter, "asset_id", None) if meter else self._asset_id,
+            "socket_area": getattr(meter, "socket_area", None) if meter else None,
+            "socket_location": getattr(meter, "socket_location", None) if meter else None,
+            "session_type": getattr(meter, "session_type", None) if meter else None,
             "uplift_applied": 0.05,
         }
-
