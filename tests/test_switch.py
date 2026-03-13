@@ -197,6 +197,23 @@ def test_supply_switch_keeps_last_known_current_session_when_refresh_omits_state
 
     assert supply_switch.is_on is True
 
+
+def test_supply_switch_treats_current_session_socket_state_7_as_on() -> None:
+    meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        site_id="CRT_WM",
+        asset_id=3378,
+        socket_state=7,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([meter])
+    supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), meter)
+
+    assert supply_switch.is_on is True
+
     coordinator.data = [
         Meter(
             meter_id="CRT_WM_3378",

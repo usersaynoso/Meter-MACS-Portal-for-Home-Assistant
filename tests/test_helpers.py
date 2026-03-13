@@ -94,9 +94,13 @@ def test_normalize_socket_state_parses_strings_and_invalid_values() -> None:
 def test_socket_state_helpers_distinguish_connected_from_powered_on() -> None:
     assert socket_is_connected(7) is True
     assert socket_is_connected(None, "current") is True
+    assert socket_is_connected(7, "previous") is False
     assert socket_is_connected(5) is False
     assert socket_is_powered_on(8) is True
-    assert socket_is_powered_on(7) is False
+    assert socket_is_powered_on(7) is True
+    assert socket_is_powered_on(7, "current") is True
+    assert socket_is_powered_on(7, "previous") is False
+    assert socket_is_powered_on(0) is False
     assert socket_is_powered_on(None, "current") is True
     assert socket_is_powered_on(None, "previous") is False
 

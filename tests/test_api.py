@@ -151,7 +151,7 @@ def test_turn_off_uses_toggle_socket_instead_of_vacate(monkeypatch) -> None:
     calls: list[tuple[str, list[dict], str]] = []
 
     async def fake_fetch_asset_session(site_id: str, asset_id: str | int):
-        return {"type": "current", "socketState": 8}
+        return {"type": "current", "socketState": 7}
 
     async def fake_post_server_action(action_id: str, payload: list[dict], *, content_type: str = "application/json") -> dict:
         calls.append((action_id, payload, content_type))
@@ -193,7 +193,7 @@ def test_turn_off_uses_toggle_socket_instead_of_vacate(monkeypatch) -> None:
     ]
 
 
-def test_turn_on_uses_toggle_socket_when_asset_is_still_connected(monkeypatch) -> None:
+def test_turn_on_returns_without_request_when_asset_is_already_powered_on(monkeypatch) -> None:
     api = MeterApi(_DummyClient())
     calls: list[tuple[str, list[dict], str]] = []
 
@@ -220,21 +220,4 @@ def test_turn_on_uses_toggle_socket_when_asset_is_still_connected(monkeypatch) -
         )
     )
 
-    assert calls == [
-        (
-            "40331886541f8254292f6757c1b29bf9b2b98eb432",
-            [
-                {
-                    "siteId": "CRT_WM",
-                    "assetId": 3378,
-                    "state": "on",
-                },
-                {
-                    "client": "$T",
-                    "meta": "$undefined",
-                    "mutationKey": ["toggleSocket"],
-                },
-            ],
-            "text/plain;charset=UTF-8",
-        )
-    ]
+    assert calls == []

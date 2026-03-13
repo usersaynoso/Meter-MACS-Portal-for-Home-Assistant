@@ -352,9 +352,10 @@ class MeterApi:
             socket_state = normalize_socket_state(session.get("socketState")) if isinstance(session, dict) else None
             if socket_state is None:
                 socket_state = await self._fetch_current_socket_state(site_id, asset_id)
-            if desired == "off" and socket_state in {7}:
+            is_powered_on = socket_is_powered_on(socket_state, session_type)
+            if desired == "off" and not is_powered_on:
                 return True
-            if desired == "on" and socket_is_powered_on(socket_state, session_type):
+            if desired == "on" and is_powered_on:
                 return True
             if attempt < attempts - 1:
                 await asyncio.sleep(delay_seconds)
@@ -530,6 +531,7 @@ class MeterApi:
         if current_socket_state is None:
             current_socket_state = await self._fetch_current_socket_state(site_id, numeric_id)
         currently_connected = socket_is_connected(current_socket_state, current_session_type)
+        currently_powered_on = socket_is_powered_on(current_socket_state, current_session_type)
         metadata: dict[str, Any] = {
             "requestId": str(uuid.uuid4()),
         }
@@ -539,7 +541,7 @@ class MeterApi:
             metadata["assetName"] = asset_name
 
         if desired == "off":
-            if not currently_connected:
+            if not currently_connected or not currently_powered_on:
                 return
             result = await self._post_server_action(
                 "40331886541f8254292f6757c1b29bf9b2b98eb432",
@@ -570,6 +572,9 @@ class MeterApi:
                 )
                 return
             raise SupplyActionError(str(message))
+
+        if currently_powered_on:
+            return
 
         if currently_connected:
             result = await self._post_server_action(

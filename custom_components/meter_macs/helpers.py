@@ -11,8 +11,8 @@ ENTITY_UNIQUE_ID_SUFFIXES: tuple[str, ...] = (
 )
 
 CONNECTED_SOCKET_STATES: frozenset[int] = frozenset({4, 7, 8})
-POWERED_OFF_SOCKET_STATES: frozenset[int] = frozenset({7})
-POWERED_ON_SOCKET_STATES: frozenset[int] = frozenset({4, 8})
+POWERED_OFF_SOCKET_STATES: frozenset[int] = frozenset({0})
+POWERED_ON_SOCKET_STATES: frozenset[int] = frozenset({4, 7, 8})
 
 
 def format_meter_display_name(
@@ -78,23 +78,31 @@ def normalize_socket_state(value: object) -> int | None:
 
 
 def socket_is_connected(socket_state: int | None, session_type: str | None = None) -> bool:
+    if session_type == "current":
+        return True
+    if session_type == "previous":
+        return False
     if socket_state in CONNECTED_SOCKET_STATES:
         return True
-    return session_type == "current"
+    return False
 
 
 def socket_is_powered_on(socket_state: int | None, session_type: str | None = None) -> bool:
     """Infer whether the relay is currently powered on.
 
-    Live Meter MACS responses show a connected-but-powered-off socket as state 7.
-    Other occupied states are treated as powered on, with a session-based
-    fallback when the portal omits the socket state.
+    Live Meter MACS responses can report socket state 7 while a current session
+    is actively consuming power. Trust the session type first, then fall back
+    to the socket state when session data is unavailable.
     """
+    if session_type == "current":
+        return True
+    if session_type == "previous":
+        return False
     if socket_state in POWERED_OFF_SOCKET_STATES:
         return False
     if socket_state in POWERED_ON_SOCKET_STATES:
         return True
-    return session_type == "current"
+    return False
 
 
 def socket_location_from_values(
