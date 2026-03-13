@@ -87,22 +87,27 @@ def socket_is_connected(socket_state: int | None, session_type: str | None = Non
     return False
 
 
-def socket_is_powered_on(socket_state: int | None, session_type: str | None = None) -> bool:
+def infer_socket_power_state(socket_state: int | None, session_type: str | None = None) -> bool | None:
     """Infer whether the relay is currently powered on.
 
-    Live Meter MACS responses can report socket state 7 while a current session
-    is actively consuming power. Trust the session type first, then fall back
-    to the socket state when session data is unavailable.
+    Prefer an explicit off socket state when the portal reports one. Some live
+    responses keep the session marked as current even after the relay has been
+    switched off, while a previous session still means the asset is no longer
+    actively powered even if a stale socket state lingers.
     """
-    if session_type == "current":
-        return True
-    if session_type == "previous":
-        return False
     if socket_state in POWERED_OFF_SOCKET_STATES:
+        return False
+    if session_type == "previous":
         return False
     if socket_state in POWERED_ON_SOCKET_STATES:
         return True
-    return False
+    if session_type == "current":
+        return True
+    return None
+
+
+def socket_is_powered_on(socket_state: int | None, session_type: str | None = None) -> bool:
+    return infer_socket_power_state(socket_state, session_type) is True
 
 
 def socket_location_from_values(

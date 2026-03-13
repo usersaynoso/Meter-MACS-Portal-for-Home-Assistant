@@ -19,6 +19,7 @@ build_meter_device_key = HELPERS.build_meter_device_key
 extract_meter_id_from_unique_id = HELPERS.extract_meter_id_from_unique_id
 filter_meter_ids = HELPERS.filter_meter_ids
 format_meter_display_name = HELPERS.format_meter_display_name
+infer_socket_power_state = HELPERS.infer_socket_power_state
 normalize_socket_state = HELPERS.normalize_socket_state
 parse_next_action_payload = HELPERS.parse_next_action_payload
 selected_meter_ids_from_options = HELPERS.selected_meter_ids_from_options
@@ -96,9 +97,12 @@ def test_socket_state_helpers_distinguish_connected_from_powered_on() -> None:
     assert socket_is_connected(None, "current") is True
     assert socket_is_connected(7, "previous") is False
     assert socket_is_connected(5) is False
+    assert infer_socket_power_state(0, "current") is False
+    assert infer_socket_power_state(None, None) is None
     assert socket_is_powered_on(8) is True
     assert socket_is_powered_on(7) is True
     assert socket_is_powered_on(7, "current") is True
+    assert socket_is_powered_on(0, "current") is False
     assert socket_is_powered_on(7, "previous") is False
     assert socket_is_powered_on(0) is False
     assert socket_is_powered_on(None, "current") is True

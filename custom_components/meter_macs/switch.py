@@ -14,7 +14,7 @@ from .api import MeterApi, Meter, SupplyActionError
 from .helpers import (
     build_meter_device_key,
     format_meter_display_name,
-    socket_is_powered_on,
+    infer_socket_power_state,
 )
 
 
@@ -85,10 +85,9 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
             socket_state = getattr(meter, "socket_state", None)
             if socket_state is not None:
                 self._socket_state = socket_state
-            if socket_is_powered_on(self._socket_state, self._session_type):
-                return True
-            if self._assumed_on is None:
-                return False
+        power_state = infer_socket_power_state(self._socket_state, self._session_type)
+        if power_state is not None:
+            return power_state
         return bool(self._assumed_on)
 
     @property

@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 
 from .const import BASE_URL
 from .helpers import (
+    infer_socket_power_state,
     normalize_socket_state,
     parse_next_action_payload,
     socket_is_connected,
@@ -352,10 +353,10 @@ class MeterApi:
             socket_state = normalize_socket_state(session.get("socketState")) if isinstance(session, dict) else None
             if socket_state is None:
                 socket_state = await self._fetch_current_socket_state(site_id, asset_id)
-            is_powered_on = socket_is_powered_on(socket_state, session_type)
-            if desired == "off" and not is_powered_on:
+            power_state = infer_socket_power_state(socket_state, session_type)
+            if desired == "off" and power_state is False:
                 return True
-            if desired == "on" and is_powered_on:
+            if desired == "on" and power_state is True:
                 return True
             if attempt < attempts - 1:
                 await asyncio.sleep(delay_seconds)
@@ -531,7 +532,7 @@ class MeterApi:
         if current_socket_state is None:
             current_socket_state = await self._fetch_current_socket_state(site_id, numeric_id)
         currently_connected = socket_is_connected(current_socket_state, current_session_type)
-        currently_powered_on = socket_is_powered_on(current_socket_state, current_session_type)
+        currently_powered_on = infer_socket_power_state(current_socket_state, current_session_type) is True
         metadata: dict[str, Any] = {
             "requestId": str(uuid.uuid4()),
         }
