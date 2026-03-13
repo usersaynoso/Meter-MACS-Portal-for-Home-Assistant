@@ -13,5 +13,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
+      - uses: actions/checkout@v6
+      - name: Pull hassfest image
+        run: docker pull ghcr.io/home-assistant/hassfest@sha256:6b1bc4deae2bea1d19299b401e02d0c3aa5b4c779058ccef11fb3e52260bfab6
+      - name: Run hassfest
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" ghcr.io/home-assistant/hassfest@sha256:6b1bc4deae2bea1d19299b401e02d0c3aa5b4c779058ccef11fb3e52260bfab6

@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.8"
+    assert data["version"] == "0.1.9"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -72,7 +72,9 @@ def test_hacs_submission_workflows_exist() -> None:
     assert hassfest_workflow.is_file()
     assert "hacs/action@main" in validate_text
     assert "category: integration" in validate_text
-    assert "home-assistant/actions/hassfest@master" in hassfest_text
+    assert "actions/checkout@v6" in hassfest_text
+    assert "docker pull ghcr.io/home-assistant/hassfest@sha256:" in hassfest_text
+    assert 'docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace"' in hassfest_text
     assert "branches:" in validate_text
     assert "branches:" in hassfest_text
     assert "- main" in validate_text
