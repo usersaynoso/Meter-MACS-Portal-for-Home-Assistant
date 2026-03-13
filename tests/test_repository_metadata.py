@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.7"
+    assert data["version"] == "0.1.8"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -65,14 +65,18 @@ def test_local_brand_assets_exist() -> None:
 def test_hacs_submission_workflows_exist() -> None:
     validate_workflow = WORKFLOWS_DIR / "validate.yml"
     hassfest_workflow = WORKFLOWS_DIR / "hassfest.yml"
+    validate_text = validate_workflow.read_text(encoding="utf-8")
+    hassfest_text = hassfest_workflow.read_text(encoding="utf-8")
 
     assert validate_workflow.is_file()
     assert hassfest_workflow.is_file()
-    assert "hacs/action@main" in validate_workflow.read_text(encoding="utf-8")
-    assert "category: integration" in validate_workflow.read_text(encoding="utf-8")
-    assert "home-assistant/actions/hassfest@master" in hassfest_workflow.read_text(
-        encoding="utf-8"
-    )
+    assert "hacs/action@main" in validate_text
+    assert "category: integration" in validate_text
+    assert "home-assistant/actions/hassfest@master" in hassfest_text
+    assert "branches:" in validate_text
+    assert "branches:" in hassfest_text
+    assert "- main" in validate_text
+    assert "- main" in hassfest_text
 
 
 def test_readme_contains_image_for_hacs_rendering() -> None:
