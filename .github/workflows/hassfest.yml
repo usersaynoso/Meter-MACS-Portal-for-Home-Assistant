@@ -9,11 +9,21 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull hassfest image
         run: docker pull ghcr.io/home-assistant/hassfest@sha256:6b1bc4deae2bea1d19299b401e02d0c3aa5b4c779058ccef11fb3e52260bfab6
       - name: Run hassfest
