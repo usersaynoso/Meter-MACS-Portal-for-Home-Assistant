@@ -76,12 +76,16 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
     def is_on(self) -> bool:
         meter = next((m for m in (self.coordinator.data or []) if m.meter_id == self._meter_id), None)
         if meter is not None:
-            self._session_type = getattr(meter, "session_type", self._session_type)
+            session_type = getattr(meter, "session_type", None)
+            if session_type is not None:
+                self._session_type = session_type
             self._socket_site = getattr(meter, "socket_site", None) or self._socket_site
             self._socket_area = getattr(meter, "socket_area", None) or self._socket_area
             self._socket_location = getattr(meter, "socket_location", None) or self._socket_location
-            self._socket_state = getattr(meter, "socket_state", None)
-            if socket_is_powered_on(self._socket_state, getattr(meter, "session_type", None)):
+            socket_state = getattr(meter, "socket_state", None)
+            if socket_state is not None:
+                self._socket_state = socket_state
+            if socket_is_powered_on(self._socket_state, self._session_type):
                 return True
             if self._assumed_on is None:
                 return False
