@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.11"
+    assert data["version"] == "0.1.12"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -77,8 +77,10 @@ def test_hacs_submission_workflows_exist() -> None:
     assert "packages: read" in hassfest_text
     assert "username: ${{ github.actor }}" in hassfest_text
     assert "password: ${{ secrets.GITHUB_TOKEN }}" in hassfest_text
-    assert "docker pull ghcr.io/home-assistant/hassfest@sha256:" in hassfest_text
-    assert 'docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace"' in hassfest_text
+    assert "HASSFEST_IMAGE: ghcr.io/home-assistant/hassfest@sha256:" in hassfest_text
+    assert "for attempt in 1 2 3 4 5;" in hassfest_text
+    assert 'docker pull "$HASSFEST_IMAGE"' in hassfest_text
+    assert 'docker run --rm -v "$GITHUB_WORKSPACE:/github/workspace" "$HASSFEST_IMAGE"' in hassfest_text
     assert "branches:" in validate_text
     assert "branches:" in hassfest_text
     assert "- main" in validate_text
