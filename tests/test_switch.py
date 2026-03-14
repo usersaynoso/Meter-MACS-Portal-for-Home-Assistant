@@ -149,7 +149,7 @@ class _DummyApi:
         return None
 
 
-def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -> None:
+def test_supply_switch_treats_socket_state_8_as_off() -> None:
     initial_meter = Meter(
         meter_id="CRT_WM_3378",
         name="The Architeuthis",
@@ -158,6 +158,23 @@ def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -
         site_id="CRT_WM",
         asset_id=3378,
         socket_state=8,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([initial_meter])
+    supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), initial_meter)
+
+    assert supply_switch.is_on is False
+
+
+def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -> None:
+    initial_meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        site_id="CRT_WM",
+        asset_id=3378,
+        socket_state=7,
         session_type="current",
     )
     coordinator = _DummyCoordinator([initial_meter])

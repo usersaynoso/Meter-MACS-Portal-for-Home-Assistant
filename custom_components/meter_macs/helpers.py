@@ -11,8 +11,8 @@ ENTITY_UNIQUE_ID_SUFFIXES: tuple[str, ...] = (
 )
 
 CONNECTED_SOCKET_STATES: frozenset[int] = frozenset({4, 7, 8})
-POWERED_OFF_SOCKET_STATES: frozenset[int] = frozenset({0})
-POWERED_ON_SOCKET_STATES: frozenset[int] = frozenset({4, 7, 8})
+POWERED_OFF_SOCKET_STATES: frozenset[int] = frozenset({0, 8})
+POWERED_ON_SOCKET_STATES: frozenset[int] = frozenset({4, 7})
 
 
 def format_meter_display_name(
