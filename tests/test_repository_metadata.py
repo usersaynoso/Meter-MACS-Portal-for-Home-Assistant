@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.14"
+    assert data["version"] == "0.1.15"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -65,11 +65,14 @@ def test_local_brand_assets_exist() -> None:
 def test_hacs_submission_workflows_exist() -> None:
     validate_workflow = WORKFLOWS_DIR / "validate.yml"
     hassfest_workflow = WORKFLOWS_DIR / "hassfest.yml"
+    release_workflow = WORKFLOWS_DIR / "release.yml"
     validate_text = validate_workflow.read_text(encoding="utf-8")
     hassfest_text = hassfest_workflow.read_text(encoding="utf-8")
+    release_text = release_workflow.read_text(encoding="utf-8")
 
     assert validate_workflow.is_file()
     assert hassfest_workflow.is_file()
+    assert release_workflow.is_file()
     assert "hacs/action@main" in validate_text
     assert "category: integration" in validate_text
     assert "actions/checkout@v6" in hassfest_text
@@ -85,6 +88,12 @@ def test_hacs_submission_workflows_exist() -> None:
     assert "branches:" in hassfest_text
     assert "- main" in validate_text
     assert "- main" in hassfest_text
+    assert 'tags:' in release_text
+    assert '- "v*"' in release_text
+    assert "contents: write" in release_text
+    assert "softprops/action-gh-release@v2" in release_text
+    assert "generate_release_notes: true" in release_text
+    assert "make_latest: true" in release_text
 
 
 def test_readme_contains_image_for_hacs_rendering() -> None:
@@ -102,3 +111,5 @@ def test_agents_file_requires_manifest_version_bumps() -> None:
     assert "git commit" in text
     assert "git push" in text
     assert "bump" in text.lower()
+    assert "GitHub Release" in text
+    assert "releases/latest" in text
