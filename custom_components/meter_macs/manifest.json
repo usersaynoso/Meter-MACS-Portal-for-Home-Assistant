@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant/issues",
   "loggers": ["custom_components.meter_macs"],
   "requirements": ["beautifulsoup4==4.12.3"],
-  "version": "0.1.16"
+  "version": "0.1.17"
 }

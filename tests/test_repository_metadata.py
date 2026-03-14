@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.16"
+    assert data["version"] == "0.1.17"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -110,6 +110,9 @@ def test_agents_file_requires_manifest_version_bumps() -> None:
     assert "manifest.json" in text
     assert "git commit" in text
     assert "git push" in text
+    assert "git tag" in text
+    assert "vX.Y.Z" in text
     assert "bump" in text.lower()
     assert "GitHub Release" in text
     assert "releases/latest" in text
+    assert "Do not report success" in text
