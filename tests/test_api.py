@@ -327,3 +327,61 @@ def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkey
     assert len(meters) == 1
     assert meters[0].socket_state == 0
     assert meters[0].session_type == "current"
+
+
+def test_turn_on_current_session_without_socket_state_still_uses_toggle_socket(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+    calls: list[tuple[str, list[dict], str]] = []
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int):
+        return {"type": "current", "socketState": None}
+
+    async def fake_fetch_current_socket_state(site_id: str, asset_id: str | int):
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return None
+
+    async def fake_post_server_action(
+        action_id: str,
+        payload: list[dict],
+        *,
+        content_type: str = "application/json",
+    ) -> dict:
+        calls.append((action_id, payload, content_type))
+        return {"data": {"success": True}}
+
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+    monkeypatch.setattr(api, "_fetch_current_socket_state", fake_fetch_current_socket_state)
+    monkeypatch.setattr(api, "_post_server_action", fake_post_server_action)
+
+    asyncio.run(
+        api.set_supply_state(
+            "CRT_WM",
+            3378,
+            "on",
+            site_db_id="site_db",
+            asset_name="The Architeuthis",
+            socket_site="Blackwall Basin",
+            socket_area="BWB Bollard 12",
+            socket_location="1202",
+        )
+    )
+
+    assert calls == [
+        (
+            "40331886541f8254292f6757c1b29bf9b2b98eb432",
+            [
+                {
+                    "siteId": "CRT_WM",
+                    "assetId": 3378,
+                    "state": "on",
+                },
+                {
+                    "client": "$T",
+                    "meta": "$undefined",
+                    "mutationKey": ["toggleSocket"],
+                },
+            ],
+            "text/plain;charset=UTF-8",
+        )
+    ]

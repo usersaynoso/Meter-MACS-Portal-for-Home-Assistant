@@ -149,7 +149,7 @@ class _DummyApi:
         return None
 
 
-def test_supply_switch_keeps_last_known_on_state_when_refresh_omits_state_fields() -> None:
+def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -> None:
     initial_meter = Meter(
         meter_id="CRT_WM_3378",
         name="The Architeuthis",
@@ -178,10 +178,10 @@ def test_supply_switch_keeps_last_known_on_state_when_refresh_omits_state_fields
         )
     ]
 
-    assert supply_switch.is_on is True
+    assert supply_switch.is_on is False
 
 
-def test_supply_switch_keeps_last_known_current_session_when_refresh_omits_state_fields() -> None:
+def test_supply_switch_does_not_treat_current_session_without_socket_state_as_on() -> None:
     initial_meter = Meter(
         meter_id="CRT_WM_3378",
         name="The Architeuthis",
@@ -195,7 +195,7 @@ def test_supply_switch_keeps_last_known_current_session_when_refresh_omits_state
     coordinator = _DummyCoordinator([initial_meter])
     supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), initial_meter)
 
-    assert supply_switch.is_on is True
+    assert supply_switch.is_on is False
 
 
 def test_supply_switch_treats_current_session_socket_state_7_as_on() -> None:
@@ -227,7 +227,7 @@ def test_supply_switch_treats_current_session_socket_state_7_as_on() -> None:
         )
     ]
 
-    assert supply_switch.is_on is True
+    assert supply_switch.is_on is False
 
 
 def test_supply_switch_explicit_off_state_overrides_stale_assumed_on() -> None:
@@ -254,6 +254,38 @@ def test_supply_switch_explicit_off_state_overrides_stale_assumed_on() -> None:
             site_id="CRT_WM",
             asset_id=3378,
             socket_state=0,
+            session_type="current",
+        )
+    ]
+
+    assert supply_switch.is_on is False
+
+
+def test_supply_switch_refresh_clears_stale_current_session_without_socket_state() -> None:
+    initial_meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        site_id="CRT_WM",
+        asset_id=3378,
+        socket_state=7,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([initial_meter])
+    supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), initial_meter)
+
+    assert supply_switch.is_on is True
+
+    coordinator.data = [
+        Meter(
+            meter_id="CRT_WM_3378",
+            name="The Architeuthis",
+            balance=12.34,
+            currency="GBP",
+            site_id="CRT_WM",
+            asset_id=3378,
+            socket_state=None,
             session_type="current",
         )
     ]

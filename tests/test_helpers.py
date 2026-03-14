@@ -99,13 +99,14 @@ def test_socket_state_helpers_distinguish_connected_from_powered_on() -> None:
     assert socket_is_connected(5) is False
     assert infer_socket_power_state(0, "current") is False
     assert infer_socket_power_state(None, None) is None
+    assert infer_socket_power_state(None, "current") is None
     assert socket_is_powered_on(8) is True
     assert socket_is_powered_on(7) is True
     assert socket_is_powered_on(7, "current") is True
     assert socket_is_powered_on(0, "current") is False
     assert socket_is_powered_on(7, "previous") is False
     assert socket_is_powered_on(0) is False
-    assert socket_is_powered_on(None, "current") is True
+    assert socket_is_powered_on(None, "current") is False
     assert socket_is_powered_on(None, "previous") is False
 
 

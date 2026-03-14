@@ -92,16 +92,15 @@ def infer_socket_power_state(socket_state: int | None, session_type: str | None 
 
     Prefer an explicit off socket state when the portal reports one. Some live
     responses keep the session marked as current even after the relay has been
-    switched off, while a previous session still means the asset is no longer
-    actively powered even if a stale socket state lingers.
+    switched off. Only explicit socket states are treated as proof that the
+    relay is on; a previous session still means the asset is no longer actively
+    powered even if a stale socket state lingers.
     """
     if socket_state in POWERED_OFF_SOCKET_STATES:
         return False
     if session_type == "previous":
         return False
     if socket_state in POWERED_ON_SOCKET_STATES:
-        return True
-    if session_type == "current":
         return True
     return None
 
