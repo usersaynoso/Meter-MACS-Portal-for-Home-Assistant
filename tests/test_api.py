@@ -268,3 +268,62 @@ def test_turn_on_current_session_with_socket_off_uses_toggle_socket(monkeypatch)
             "text/plain;charset=UTF-8",
         )
     ]
+
+
+def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_session() -> dict:
+        return {
+            "user": {
+                "sites": [
+                    {
+                        "site": {"siteId": "CRT_WM", "_id": "site-db-1"},
+                        "assets": [
+                            {"assetId": "3378", "_id": "asset-db-1", "assetName": "The Architeuthis"}
+                        ],
+                    }
+                ]
+            }
+        }
+
+    async def fake_fetch_asset_details(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return {
+            "personalInformation": {"assetName": "The Architeuthis"},
+            "utilityTypes": [
+                {
+                    "balance": 12.34,
+                    "areaName": "BWB Bollard 12",
+                    "location": "1202",
+                    "socketState": 0,
+                }
+            ],
+        }
+
+    async def fake_fetch_cost_per_kwh(site_id: str, asset_id: str | int) -> float:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return 0.42
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return {
+            "type": "current",
+            "site": "Blackwall Basin",
+            "area": "BWB Bollard 12",
+            "location": "1202",
+        }
+
+    monkeypatch.setattr(api, "get_session", fake_get_session)
+    monkeypatch.setattr(api, "fetch_asset_details", fake_fetch_asset_details)
+    monkeypatch.setattr(api, "fetch_cost_per_kwh", fake_fetch_cost_per_kwh)
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+
+    meters = asyncio.run(api.fetch_meters())
+
+    assert len(meters) == 1
+    assert meters[0].socket_state == 0
+    assert meters[0].session_type == "current"

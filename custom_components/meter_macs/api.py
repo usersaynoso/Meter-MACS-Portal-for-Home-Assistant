@@ -476,6 +476,11 @@ class MeterApi:
                     asset_session = await self.fetch_asset_session(site_id, normalized_asset_id)
                 except Exception:  # noqa: BLE001
                     asset_session = None
+                session_socket_state = (
+                    normalize_socket_state((asset_session or {}).get("socketState"))
+                    if asset_session
+                    else None
+                )
                 meter_unique_id = f"{site_id}_{normalized_asset_id}"
                 if meter_unique_id in seen_meter_ids:
                     continue
@@ -494,8 +499,8 @@ class MeterApi:
                         socket_site=(asset_session or {}).get("site"),
                         socket_area=(asset_session or {}).get("area") or socket_area,
                         socket_location=(asset_session or {}).get("location") or socket_location,
-                        socket_state=normalize_socket_state((asset_session or {}).get("socketState"))
-                        if asset_session
+                        socket_state=session_socket_state
+                        if session_socket_state is not None
                         else socket_state,
                         session_type=(asset_session or {}).get("type"),
                     )

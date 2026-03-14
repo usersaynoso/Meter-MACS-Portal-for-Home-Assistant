@@ -14,9 +14,7 @@ from homeassistant.const import Platform
 from .const import (
     DOMAIN,
     PLATFORMS,
-    CONF_SCAN_INTERVAL_MINUTES,
     CONF_SELECTED_METERS,
-    DEFAULT_SCAN_INTERVAL_MINUTES,
 )
 from .api import MeterMacsClient
 from .coordinator import MeterMacsCoordinator
@@ -25,6 +23,7 @@ from .helpers import (
     extract_meter_id_from_unique_id,
     selected_meter_ids_from_options,
 )
+from .intervals import resolve_scan_interval_seconds
 
 _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -40,9 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     email: str = entry.data.get("email", "")
     password: str = entry.data.get("password", "")
 
-    scan_minutes: int = entry.options.get(
-        CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES
-    )
+    scan_seconds = resolve_scan_interval_seconds(entry.options)
     selected_meter_ids = selected_meter_ids_from_options(entry.options)
 
     client = MeterMacsClient(session=session, email=email, password=password)
@@ -50,7 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = MeterMacsCoordinator(
         hass=hass,
         client=client,
-        update_interval=timedelta(minutes=max(2, int(scan_minutes))),
+        update_interval=timedelta(seconds=scan_seconds),
         selected_meter_ids=selected_meter_ids,
     )
 

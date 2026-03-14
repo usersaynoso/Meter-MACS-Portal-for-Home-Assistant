@@ -14,25 +14,21 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
-    CONF_SCAN_INTERVAL_MINUTES,
+    CONF_SCAN_INTERVAL_SECONDS,
     CONF_SELECTED_METERS,
-    DEFAULT_SCAN_INTERVAL_MINUTES,
-    MIN_SCAN_INTERVAL_MINUTES,
 )
 from .api import Meter, MeterApi, MeterMacsClient, AuthError
 from .helpers import format_meter_display_name
+from .intervals import resolve_scan_interval_seconds, validate_scan_interval_seconds
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _validate_interval(value: int) -> int:
     try:
-        v = int(value)
-    except Exception:  # noqa: BLE001
-        raise vol.Invalid("Invalid number")
-    if v < MIN_SCAN_INTERVAL_MINUTES:
-        raise vol.Invalid(f"Minimum is {MIN_SCAN_INTERVAL_MINUTES}")
-    return v
+        return validate_scan_interval_seconds(value)
+    except ValueError as err:
+        raise vol.Invalid(str(err)) from err
 
 
 class MeterMacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -129,11 +125,11 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
 
         if user_input is not None:
             try:
-                minutes = _validate_interval(user_input[CONF_SCAN_INTERVAL_MINUTES])
+                seconds = _validate_interval(user_input[CONF_SCAN_INTERVAL_SECONDS])
             except vol.Invalid:
                 errors["base"] = "invalid_interval"
             else:
-                data = {CONF_SCAN_INTERVAL_MINUTES: minutes}
+                data = {CONF_SCAN_INTERVAL_SECONDS: seconds}
                 if meter_choices:
                     data[CONF_SELECTED_METERS] = list(user_input.get(CONF_SELECTED_METERS, []))
                 elif CONF_SELECTED_METERS in self.config_entry.options:
@@ -142,9 +138,9 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 return self.async_create_entry(title="Options", data=data)
 
-        minutes = self.config_entry.options.get(CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES)
+        seconds = resolve_scan_interval_seconds(self.config_entry.options)
         schema_dict: dict = {
-            vol.Required(CONF_SCAN_INTERVAL_MINUTES, default=minutes): int,
+            vol.Required(CONF_SCAN_INTERVAL_SECONDS, default=seconds): int,
         }
         if meter_choices:
             schema_dict[

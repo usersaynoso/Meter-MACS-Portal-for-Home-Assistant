@@ -25,8 +25,9 @@ Add `https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant` to HAC
 
 ## Notes
 
-- Default refresh interval: `15` minutes
-- Minimum refresh interval: `2` minutes
+- Default refresh interval: `120` seconds
+- Minimum refresh interval: `30` seconds
+- Reloading the integration performs an immediate refresh
 - Reauthentication is supported through Home Assistant
 - The supply switch is optimistic and does not yet confirm the true portal state after a toggle
 - The integration depends on Meter MACS portal/API behavior and may require updates if the portal changes

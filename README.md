@@ -45,9 +45,10 @@ Authentication flow:
 - If API discovery fails, it attempts to parse meter data from the web dashboard HTML
 
 Refresh behavior:
-- Default refresh interval is 15 minutes
-- The minimum allowed refresh interval is 2 minutes
+- Default refresh interval is 120 seconds
+- The minimum allowed refresh interval is 30 seconds
 - The refresh interval is configurable from the integration options dialog after setup
+- Reloading the integration triggers an immediate refresh instead of waiting for the next timer
 
 Asset selection behavior:
 - Each discovered asset is registered as its own Home Assistant device
@@ -110,12 +111,12 @@ The integration uses the account email as the unique identifier, so the same acc
 ### Options
 
 After setup, open the integration and configure:
-- `scan_interval_minutes`
+- `scan_interval_seconds`
 - `selected_meters`
 
 Validation rules:
-- Minimum value: `2`
-- Default value: `15`
+- Minimum value: `30`
+- Default value: `120`
 
 ## Diagnostics and Logging
 
