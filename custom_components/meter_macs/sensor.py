@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, List, Optional
+from zoneinfo import ZoneInfo
 
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
@@ -18,16 +20,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator: MeterMacsCoordinator = data["coordinator"]
 
     sensors_balance: List[MeterMacsBalanceSensor] = []
+    sensors_balance_updated: List[MeterMacsBalanceUpdatedSensor] = []
     sensors_cost: List[MeterMacsCostPerKwhSensor] = []
     sensors_last_updated: List[MeterMacsLastUpdatedSensor] = []
     sensors_safety_tripped: List[MeterMacsSafetyTrippedSensor] = []
     for meter in coordinator.data or []:
         sensors_balance.append(MeterMacsBalanceSensor(entry, coordinator, meter))
+        sensors_balance_updated.append(MeterMacsBalanceUpdatedSensor(entry, coordinator, meter))
         sensors_cost.append(MeterMacsCostPerKwhSensor(entry, coordinator, meter))
         sensors_last_updated.append(MeterMacsLastUpdatedSensor(entry, coordinator, meter))
         sensors_safety_tripped.append(MeterMacsSafetyTrippedSensor(entry, coordinator, meter))
 
-    async_add_entities(sensors_balance + sensors_cost + sensors_last_updated + sensors_safety_tripped)
+    async_add_entities(
+        sensors_balance
+        + sensors_balance_updated
+        + sensors_cost
+        + sensors_last_updated
+        + sensors_safety_tripped
+    )
+
+
+def _format_meter_time(
+    coordinator: MeterMacsCoordinator,
+    reading_date: datetime | None,
+) -> str | None:
+    if reading_date is None:
+        return None
+
+    config = getattr(getattr(coordinator, "hass", None), "config", None)
+    time_zone = getattr(config, "time_zone", None)
+    if isinstance(time_zone, str) and time_zone.strip():
+        try:
+            return reading_date.astimezone(ZoneInfo(time_zone)).strftime("%H:%M")
+        except Exception:  # noqa: BLE001
+            pass
+
+    return reading_date.astimezone(timezone.utc).strftime("%H:%M")
 
 
 class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEntity):
@@ -133,6 +161,57 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
             "uplift_applied": 0.05,
+        }
+
+
+class MeterMacsBalanceUpdatedSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEntity):
+    _attr_icon = "mdi:clock-time-four-outline"
+
+    def __init__(self, entry: ConfigEntry, coordinator: MeterMacsCoordinator, meter: Meter) -> None:
+        super().__init__(coordinator)
+        self._entry = entry
+        self._meter_id = meter.meter_id
+        self._name = meter.name
+        self._display_name = format_meter_display_name(
+            meter.name,
+            getattr(meter, "asset_id", None),
+            getattr(meter, "site_id", None),
+        )
+        self._site_id = getattr(meter, "site_id", None)
+        self._asset_id = getattr(meter, "asset_id", None)
+        self._attr_unique_id = f"{entry.entry_id}_{self._meter_id}_balance_updated"
+        self._attr_name = f"Meter MACS {self._display_name} Balance Updated"
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return {
+            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
+            "name": f"Meter MACS {self._display_name}",
+            "manufacturer": "Meter MACS",
+            "model": "Electricity Asset",
+            "serial_number": str(self._asset_id or self._meter_id),
+        }
+
+    @property
+    def native_value(self) -> str | None:
+        meter = next((m for m in (self.coordinator.data or []) if m.meter_id == self._meter_id), None)
+        if not meter:
+            return None
+        return _format_meter_time(self.coordinator, getattr(meter, "balance_reading_date", None))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        meter = next((m for m in (self.coordinator.data or []) if m.meter_id == self._meter_id), None)
+        reading_date = getattr(meter, "balance_reading_date", None) if meter else None
+        return {
+            "meter_id": self._meter_id,
+            "meter_name": self._name,
+            "site_id": getattr(meter, "site_id", None) if meter else self._site_id,
+            "asset_id": getattr(meter, "asset_id", None) if meter else self._asset_id,
+            "socket_area": getattr(meter, "socket_area", None) if meter else None,
+            "socket_location": getattr(meter, "socket_location", None) if meter else None,
+            "session_type": getattr(meter, "session_type", None) if meter else None,
+            "reading_date": reading_date.isoformat() if reading_date else None,
         }
 
 

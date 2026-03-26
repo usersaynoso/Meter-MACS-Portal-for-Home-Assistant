@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import importlib.util
 import sys
 import types
@@ -50,6 +51,7 @@ API = _load_module("api")
 
 MeterApi = API.MeterApi
 SupplyActionError = API.SupplyActionError
+extract_balance_reading_date = API._extract_balance_reading_date
 
 
 class _DummyClient:
@@ -292,6 +294,7 @@ def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkey
         assert asset_id == 3378
         return {
             "personalInformation": {"assetName": "The Architeuthis"},
+            "readingDate": "2026-03-26T18:48:18.000Z",
             "utilityTypes": [
                 {
                     "balance": 12.34,
@@ -327,6 +330,27 @@ def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkey
     assert len(meters) == 1
     assert meters[0].socket_state == 8
     assert meters[0].session_type == "current"
+    assert meters[0].balance_reading_date == datetime(2026, 3, 26, 18, 48, 18, tzinfo=timezone.utc)
+
+
+def test_extract_balance_reading_date_finds_nested_timestamp() -> None:
+    payload = {
+        "asset": {
+            "summary": {
+                "readingDate": "2026-03-26T18:48:18.000Z",
+            }
+        }
+    }
+
+    assert extract_balance_reading_date(payload) == datetime(
+        2026,
+        3,
+        26,
+        18,
+        48,
+        18,
+        tzinfo=timezone.utc,
+    )
 
 
 def test_turn_off_current_session_with_socket_state_8_does_not_toggle(monkeypatch) -> None:

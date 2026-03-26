@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,6 +40,7 @@ class Meter:
     name: str
     balance: Optional[float]
     currency: Optional[str]
+    balance_reading_date: datetime | None = None
     site_id: Optional[str] = None
     asset_id: str | int | None = None
     cost_per_kwh: Optional[float] = None
@@ -224,6 +226,34 @@ async def _read_json_response(resp: aiohttp.ClientResponse) -> dict:
     except Exception as exc:  # noqa: BLE001
         _LOGGER.debug("JSON parse failed; first 200 bytes: %s", text[:200])
         raise ScrapeError("Failed to parse JSON response") from exc
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _extract_balance_reading_date(payload: Any) -> datetime | None:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in {"readingDate", "reading_date", "lastReadingDate", "last_reading_date"}:
+                parsed = _parse_iso_datetime(value)
+                if parsed is not None:
+                    return parsed
+        for value in payload.values():
+            parsed = _extract_balance_reading_date(value)
+            if parsed is not None:
+                return parsed
+    elif isinstance(payload, list):
+        for item in payload:
+            parsed = _extract_balance_reading_date(item)
+            if parsed is not None:
+                return parsed
+    return None
 
 
 class ApiNotAvailable(Exception):
@@ -457,6 +487,7 @@ class MeterApi:
                 utils = details.get("utilityTypes") or []
                 util = utils[0] if utils else None
                 balance: Optional[float] = None
+                balance_reading_date = _extract_balance_reading_date(details)
                 socket_area: Optional[str] = None
                 socket_location: Optional[str] = None
                 socket_state: Optional[int] = None
@@ -491,6 +522,7 @@ class MeterApi:
                         name=(details.get("personalInformation", {}).get("assetName") or asset_name),
                         balance=balance,
                         currency=None,
+                        balance_reading_date=balance_reading_date,
                         site_id=site_id,
                         asset_id=normalized_asset_id,
                         cost_per_kwh=cost_per_kwh,
