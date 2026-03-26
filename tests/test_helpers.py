@@ -56,6 +56,10 @@ def test_extract_meter_id_from_unique_id_handles_all_entity_suffixes() -> None:
         extract_meter_id_from_unique_id("entry123", "entry123_CRT_WM_3378_supply")
         == "CRT_WM_3378"
     )
+    assert (
+        extract_meter_id_from_unique_id("entry123", "entry123_CRT_WM_3378_safety_tripped")
+        == "CRT_WM_3378"
+    )
 
 
 def test_selected_meter_ids_from_options_distinguishes_all_vs_none() -> None:
