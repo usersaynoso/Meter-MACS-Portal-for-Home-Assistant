@@ -111,12 +111,12 @@ The integration uses the account email as the unique identifier, so the same acc
 ### Options
 
 After setup, open the integration and configure:
-- `scan_interval_seconds`
+- `scan_interval_minutes`
 - `selected_meters`
 
 Validation rules:
-- Minimum value: `30`
-- Default value: `120`
+- Minimum value: `1`
+- Default value: `1`
 
 ## Diagnostics and Logging
 

@@ -7,6 +7,7 @@ from typing import Iterable
 ENTITY_UNIQUE_ID_SUFFIXES: tuple[str, ...] = (
     "cost_per_kwh",
     "balance",
+    "last_updated",
     "safety_tripped",
     "supply",
 )

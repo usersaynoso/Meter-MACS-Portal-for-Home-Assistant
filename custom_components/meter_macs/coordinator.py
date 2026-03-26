@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 
 from homeassistant.core import HomeAssistant
@@ -36,6 +36,7 @@ class MeterMacsCoordinator(DataUpdateCoordinator[List[Meter]]):
         self._api = MeterApi(client)
         self._selected_meter_ids = selected_meter_ids
         self.all_meters: List[Meter] = []
+        self.last_refresh_time: datetime | None = None
 
     async def _async_update_data(self) -> List[Meter]:
         try:
@@ -57,9 +58,9 @@ class MeterMacsCoordinator(DataUpdateCoordinator[List[Meter]]):
                 meters = [meter for meter in meters if meter.meter_id in selected_ids]
             if not meters:
                 _LOGGER.debug("No meters parsed from dashboard HTML")
+            self.last_refresh_time = datetime.now(timezone.utc)
             return meters
         except AuthError as err:
             raise ConfigEntryAuthFailed from err
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(str(err)) from err
-

@@ -170,14 +170,14 @@ def test_async_setup_entry_uses_default_interval_and_refreshes_immediately(monke
     assert result is True
     assert len(MeterMacsCoordinator.instances) == 1
     coordinator = MeterMacsCoordinator.instances[0]
-    assert coordinator.update_interval.total_seconds() == 120
+    assert coordinator.update_interval.total_seconds() == 60
     assert coordinator.refresh_calls == 1
     assert hass.data[MODULE.DOMAIN][entry.entry_id]["coordinator"] is coordinator
 
 
-def test_async_setup_entry_uses_seconds_option_override(monkeypatch) -> None:
+def test_async_setup_entry_uses_minutes_option_override(monkeypatch) -> None:
     hass = _DummyHass()
-    entry = _DummyEntry({"scan_interval_seconds": 45})
+    entry = _DummyEntry({"scan_interval_minutes": 5})
 
     async def _async_sync_asset_registries(*args, **kwargs) -> None:
         return None
@@ -187,4 +187,4 @@ def test_async_setup_entry_uses_seconds_option_override(monkeypatch) -> None:
 
     asyncio.run(MODULE.async_setup_entry(hass, entry))
 
-    assert MeterMacsCoordinator.instances[0].update_interval.total_seconds() == 45
+    assert MeterMacsCoordinator.instances[0].update_interval.total_seconds() == 300

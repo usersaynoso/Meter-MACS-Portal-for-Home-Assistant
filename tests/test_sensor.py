@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import importlib.util
 import sys
 import types
@@ -42,6 +43,7 @@ def _install_homeassistant_stubs() -> None:
 
         class SensorDeviceClass(str, Enum):
             MONETARY = "monetary"
+            TIMESTAMP = "timestamp"
 
         ha_sensor.SensorEntity = SensorEntity
         ha_sensor.SensorDeviceClass = SensorDeviceClass
@@ -119,6 +121,7 @@ API = _load_module("api")
 SENSOR = _load_module("sensor")
 
 Meter = API.Meter
+MeterMacsLastUpdatedSensor = SENSOR.MeterMacsLastUpdatedSensor
 MeterMacsSafetyTrippedSensor = SENSOR.MeterMacsSafetyTrippedSensor
 
 
@@ -130,6 +133,8 @@ class _DummyEntry:
 class _DummyCoordinator:
     def __init__(self, data) -> None:
         self.data = data
+        self.last_update_success_time = None
+        self.last_refresh_time = None
 
 
 def test_async_setup_entry_adds_safety_tripped_sensor() -> None:
@@ -160,8 +165,26 @@ def test_async_setup_entry_adds_safety_tripped_sensor() -> None:
 
     asyncio.run(SENSOR.async_setup_entry(hass, entry, _async_add_entities))
 
-    assert len(added_entities) == 3
+    assert len(added_entities) == 4
+    assert any(isinstance(entity, MeterMacsLastUpdatedSensor) for entity in added_entities)
     assert any(isinstance(entity, MeterMacsSafetyTrippedSensor) for entity in added_entities)
+
+
+def test_last_updated_sensor_reports_coordinator_timestamp() -> None:
+    meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        site_id="CRT_WM",
+        asset_id=3378,
+    )
+    coordinator = _DummyCoordinator([meter])
+    coordinator.last_refresh_time = datetime(2026, 3, 26, 16, 30, tzinfo=timezone.utc)
+    sensor = MeterMacsLastUpdatedSensor(_DummyEntry(), coordinator, meter)
+
+    assert sensor.native_value == datetime(2026, 3, 26, 16, 30, tzinfo=timezone.utc)
+    assert sensor.extra_state_attributes["meter_id"] == "CRT_WM_3378"
 
 
 def test_safety_tripped_sensor_reports_yes_for_socket_state_1() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from homeassistant.const import Platform
 
 from .intervals import (
+    CONF_SCAN_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_SECONDS,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     LEGACY_CONF_SCAN_INTERVAL_MINUTES,

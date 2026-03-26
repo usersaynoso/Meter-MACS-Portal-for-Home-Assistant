@@ -7,26 +7,31 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
+    CONF_SCAN_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_SECONDS,
     CONF_SELECTED_METERS,
 )
 from .api import Meter, MeterApi, MeterMacsClient, AuthError
 from .helpers import format_meter_display_name
-from .intervals import resolve_scan_interval_seconds, validate_scan_interval_seconds
+from .intervals import (
+    resolve_scan_interval_seconds,
+    scan_interval_seconds_to_minutes,
+    validate_scan_interval_minutes,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def _validate_interval(value: int) -> int:
     try:
-        return validate_scan_interval_seconds(value)
+        return validate_scan_interval_minutes(value)
     except ValueError as err:
         raise vol.Invalid(str(err)) from err
 
@@ -99,10 +104,15 @@ class MeterMacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
         return self.async_show_form(step_id="reauth_confirm", data_schema=data_schema, errors=errors)
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> MeterMacsOptionsFlowHandler:
+        return MeterMacsOptionsFlowHandler(config_entry)
+
 
 class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         errors: Dict[str, str] = {}
@@ -115,7 +125,7 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
             )
             for meter in available_meters
         }
-        current_selected_meters = self.config_entry.options.get(
+        current_selected_meters = self._config_entry.options.get(
             CONF_SELECTED_METERS,
             [meter.meter_id for meter in available_meters],
         )
@@ -125,22 +135,24 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
 
         if user_input is not None:
             try:
-                seconds = _validate_interval(user_input[CONF_SCAN_INTERVAL_SECONDS])
+                minutes = _validate_interval(user_input[CONF_SCAN_INTERVAL_MINUTES])
             except vol.Invalid:
                 errors["base"] = "invalid_interval"
             else:
-                data = {CONF_SCAN_INTERVAL_SECONDS: seconds}
+                data = {CONF_SCAN_INTERVAL_MINUTES: minutes}
                 if meter_choices:
                     data[CONF_SELECTED_METERS] = list(user_input.get(CONF_SELECTED_METERS, []))
-                elif CONF_SELECTED_METERS in self.config_entry.options:
+                elif CONF_SELECTED_METERS in self._config_entry.options:
                     data[CONF_SELECTED_METERS] = list(
-                        self.config_entry.options.get(CONF_SELECTED_METERS, [])
+                        self._config_entry.options.get(CONF_SELECTED_METERS, [])
                     )
                 return self.async_create_entry(title="Options", data=data)
 
-        seconds = resolve_scan_interval_seconds(self.config_entry.options)
+        minutes = scan_interval_seconds_to_minutes(
+            resolve_scan_interval_seconds(self._config_entry.options)
+        )
         schema_dict: dict = {
-            vol.Required(CONF_SCAN_INTERVAL_SECONDS, default=seconds): int,
+            vol.Required(CONF_SCAN_INTERVAL_MINUTES, default=minutes): int,
         }
         if meter_choices:
             schema_dict[
@@ -154,7 +166,7 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=data_schema, errors=errors)
 
     async def _async_get_available_meters(self) -> list[Meter]:
-        data = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id, {})
+        data = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id, {})
         coordinator = data.get("coordinator")
         if coordinator and getattr(coordinator, "all_meters", None):
             return list(coordinator.all_meters)
@@ -162,8 +174,8 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
         session = async_get_clientsession(self.hass)
         client = MeterMacsClient(
             session=session,
-            email=self.config_entry.data.get("email", ""),
-            password=self.config_entry.data.get("password", ""),
+            email=self._config_entry.data.get("email", ""),
+            password=self._config_entry.data.get("password", ""),
         )
         api = MeterApi(client)
         try:
@@ -171,7 +183,3 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Unable to fetch meters for options flow", exc_info=True)
             return []
-
-
-async def async_get_options_flow(config_entry: ConfigEntry) -> MeterMacsOptionsFlowHandler:
-    return MeterMacsOptionsFlowHandler(config_entry)

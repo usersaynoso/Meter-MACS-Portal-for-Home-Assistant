@@ -28,7 +28,7 @@
       "init": {
         "title": "Meter MACS options",
         "data": {
-          "scan_interval_seconds": "Update interval (seconds)",
+          "scan_interval_minutes": "Update interval (minutes)",
           "selected_meters": "Assets to include"
         }
       }
