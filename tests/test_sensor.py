@@ -42,11 +42,17 @@ def _install_homeassistant_stubs() -> None:
             pass
 
         class SensorDeviceClass(str, Enum):
+            ENERGY = "energy"
             MONETARY = "monetary"
             TIMESTAMP = "timestamp"
 
+        class SensorStateClass(str, Enum):
+            MEASUREMENT = "measurement"
+            TOTAL_INCREASING = "total_increasing"
+
         ha_sensor.SensorEntity = SensorEntity
         ha_sensor.SensorDeviceClass = SensorDeviceClass
+        ha_sensor.SensorStateClass = SensorStateClass
 
     config_entries = sys.modules.setdefault(
         "homeassistant.config_entries",
@@ -121,7 +127,10 @@ API = _load_module("api")
 SENSOR = _load_module("sensor")
 
 Meter = API.Meter
+MeterMacsBalanceSensor = SENSOR.MeterMacsBalanceSensor
 MeterMacsBalanceUpdatedSensor = SENSOR.MeterMacsBalanceUpdatedSensor
+MeterMacsCostPerKwhSensor = SENSOR.MeterMacsCostPerKwhSensor
+MeterMacsImportedEnergySensor = SENSOR.MeterMacsImportedEnergySensor
 MeterMacsLastUpdatedSensor = SENSOR.MeterMacsLastUpdatedSensor
 MeterMacsSafetyTrippedSensor = SENSOR.MeterMacsSafetyTrippedSensor
 
@@ -144,6 +153,7 @@ def test_async_setup_entry_adds_safety_tripped_sensor() -> None:
         name="The Architeuthis",
         balance=12.34,
         currency="GBP",
+        imported_energy_kwh=512.46,
         site_id="CRT_WM",
         asset_id=3378,
         socket_state=1,
@@ -166,8 +176,9 @@ def test_async_setup_entry_adds_safety_tripped_sensor() -> None:
 
     asyncio.run(SENSOR.async_setup_entry(hass, entry, _async_add_entities))
 
-    assert len(added_entities) == 5
+    assert len(added_entities) == 6
     assert any(isinstance(entity, MeterMacsBalanceUpdatedSensor) for entity in added_entities)
+    assert any(isinstance(entity, MeterMacsImportedEnergySensor) for entity in added_entities)
     assert any(isinstance(entity, MeterMacsLastUpdatedSensor) for entity in added_entities)
     assert any(isinstance(entity, MeterMacsSafetyTrippedSensor) for entity in added_entities)
 
@@ -187,6 +198,67 @@ def test_balance_updated_sensor_reports_reading_time_only() -> None:
 
     assert sensor.native_value == "18:48"
     assert sensor.extra_state_attributes["reading_date"] == "2026-03-26T18:48:18+00:00"
+
+
+def test_imported_energy_sensor_reports_home_assistant_energy_metadata() -> None:
+    meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        imported_energy_kwh=512.46,
+        balance_reading_date=datetime(2026, 3, 26, 18, 48, 18, tzinfo=timezone.utc),
+        site_id="CRT_WM",
+        asset_id=3378,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([meter])
+    sensor = MeterMacsImportedEnergySensor(_DummyEntry(), coordinator, meter)
+
+    assert sensor.native_value == 512.46
+    assert sensor._attr_device_class == SENSOR.SensorDeviceClass.ENERGY
+    assert sensor._attr_state_class == SENSOR.SensorStateClass.TOTAL_INCREASING
+    assert sensor._attr_native_unit_of_measurement == "kWh"
+    assert sensor.extra_state_attributes["reading_date"] == "2026-03-26T18:48:18+00:00"
+
+
+def test_sensors_force_recorder_updates_and_numeric_statistics_metadata() -> None:
+    meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        imported_energy_kwh=512.46,
+        cost_per_kwh=0.42,
+        balance_reading_date=datetime(2026, 3, 26, 18, 48, 18, tzinfo=timezone.utc),
+        site_id="CRT_WM",
+        asset_id=3378,
+        socket_state=1,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([meter])
+    entry = _DummyEntry()
+
+    balance = MeterMacsBalanceSensor(entry, coordinator, meter)
+    cost = MeterMacsCostPerKwhSensor(entry, coordinator, meter)
+    imported_energy = MeterMacsImportedEnergySensor(entry, coordinator, meter)
+    balance_updated = MeterMacsBalanceUpdatedSensor(entry, coordinator, meter)
+    last_updated = MeterMacsLastUpdatedSensor(entry, coordinator, meter)
+    safety_tripped = MeterMacsSafetyTrippedSensor(entry, coordinator, meter)
+
+    assert balance._attr_force_update is True
+    assert getattr(balance, "_attr_device_class", None) is None
+    assert balance._attr_state_class == SENSOR.SensorStateClass.MEASUREMENT
+
+    assert cost._attr_force_update is True
+    assert cost._attr_state_class == SENSOR.SensorStateClass.MEASUREMENT
+
+    assert imported_energy._attr_force_update is True
+    assert imported_energy._attr_state_class == SENSOR.SensorStateClass.TOTAL_INCREASING
+
+    assert balance_updated._attr_force_update is True
+    assert last_updated._attr_force_update is True
+    assert safety_tripped._attr_force_update is True
 
 
 def test_last_updated_sensor_reports_coordinator_timestamp() -> None:

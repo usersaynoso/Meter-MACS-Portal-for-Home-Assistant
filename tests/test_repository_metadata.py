@@ -28,7 +28,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.22"
+    assert data["version"] == "0.1.23"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:

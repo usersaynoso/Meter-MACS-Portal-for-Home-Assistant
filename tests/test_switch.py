@@ -166,6 +166,23 @@ def test_supply_switch_treats_socket_state_8_as_off() -> None:
     assert supply_switch.is_on is False
 
 
+def test_supply_switch_forces_recorder_updates() -> None:
+    meter = Meter(
+        meter_id="CRT_WM_3378",
+        name="The Architeuthis",
+        balance=12.34,
+        currency="GBP",
+        site_id="CRT_WM",
+        asset_id=3378,
+        socket_state=7,
+        session_type="current",
+    )
+    coordinator = _DummyCoordinator([meter])
+    supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), meter)
+
+    assert supply_switch._attr_force_update is True
+
+
 def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -> None:
     initial_meter = Meter(
         meter_id="CRT_WM_3378",

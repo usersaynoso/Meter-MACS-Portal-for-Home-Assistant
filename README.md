@@ -27,7 +27,7 @@ If HACS cached an older invalid version before these repository changes, remove 
 - Authenticates against the Meter MACS portal with your existing portal credentials
 - Discovers electricity meters from the account session API when available
 - Falls back to dashboard HTML scraping if the JSON API is unavailable
-- Creates Home Assistant entities for meter balance, balance update time, integration refresh time, and electricity cost per kWh
+- Creates Home Assistant entities for meter balance, imported energy, balance update time, integration refresh time, and electricity cost per kWh
 - Exposes an electricity supply switch when the required site and asset identifiers are available
 - Groups each Meter MACS asset as its own Home Assistant device
 - Lets you choose which discovered assets are enabled from the integration options
@@ -64,6 +64,7 @@ The integration currently registers sensor and switch platforms.
 | Entity type | Example name | Notes |
 | --- | --- | --- |
 | Meter balance | `Meter MACS Home Balance` | Monetary sensor populated from the portal balance data |
+| Energy imported from grid | `Meter MACS Home Energy Imported From Grid` | Cumulative kWh reading derived from the portal `reading` / total-used data so Home Assistant Energy can use it |
 | Balance updated | `Meter MACS Home Balance Updated` | Time-only sensor derived from the asset `readingDate` returned by the Meter MACS API |
 | Last updated | `Meter MACS Home Last Updated` | Timestamp sensor showing when the integration last refreshed successfully |
 | Electricity cost per kWh | `Meter MACS Home Electricity Cost Per kWh` | Derived from the portal tariff/session data with a 5% uplift applied in code |
@@ -72,6 +73,12 @@ Balance sensor attributes:
 - `meter_id`
 - `meter_name`
 - `site_id`
+
+Energy imported from grid sensor attributes:
+- `meter_id`
+- `meter_name`
+- `site_id`
+- `reading_date`
 
 Balance updated sensor attributes:
 - `meter_id`

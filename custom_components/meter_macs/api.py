@@ -40,6 +40,7 @@ class Meter:
     name: str
     balance: Optional[float]
     currency: Optional[str]
+    imported_energy_kwh: Optional[float] = None
     balance_reading_date: datetime | None = None
     site_id: Optional[str] = None
     asset_id: str | int | None = None
@@ -256,6 +257,95 @@ def _extract_balance_reading_date(payload: Any) -> datetime | None:
     return None
 
 
+def _parse_energy_value(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+
+    cleaned = value.strip().lower().replace(",", "")
+    if cleaned.endswith("kwh"):
+        cleaned = cleaned[:-3].strip()
+    if cleaned.endswith("kw/h"):
+        cleaned = cleaned[:-4].strip()
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _extract_imported_energy_kwh(
+    payload: Any,
+    *,
+    allow_generic_reading: bool = False,
+) -> float | None:
+    candidate_keys = {
+        "energyimported",
+        "energyimportedfromgrid",
+        "energyimportkwh",
+        "importedenergy",
+        "importedkwh",
+        "meterreading",
+        "meterreadingkwh",
+        "readingkwh",
+        "totalenergy",
+        "totalenergyused",
+        "totalimportedenergy",
+        "totalused",
+        "totalusedkwh",
+        "totalusage",
+        "usagekwh",
+    }
+    if allow_generic_reading:
+        candidate_keys.add("reading")
+
+    labelled_values = {
+        "energy imported from grid",
+        "imported energy",
+        "meter reading",
+        "total used",
+        "total usage",
+        "usage",
+    }
+
+    if isinstance(payload, dict):
+        label = str(payload.get("label") or payload.get("name") or "").strip().lower()
+        if label in labelled_values:
+            for value_key in ("value", "reading", "amount", "total", "kwh"):
+                parsed = _parse_energy_value(payload.get(value_key))
+                if parsed is not None:
+                    return parsed
+
+        for key, value in payload.items():
+            normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if normalized_key in candidate_keys:
+                parsed = _parse_energy_value(value)
+                if parsed is not None:
+                    return parsed
+
+        for value in payload.values():
+            parsed = _extract_imported_energy_kwh(
+                value,
+                allow_generic_reading=False,
+            )
+            if parsed is not None:
+                return parsed
+
+    elif isinstance(payload, list):
+        for item in payload:
+            parsed = _extract_imported_energy_kwh(
+                item,
+                allow_generic_reading=allow_generic_reading,
+            )
+            if parsed is not None:
+                return parsed
+
+    return None
+
+
 class ApiNotAvailable(Exception):
     pass
 
@@ -452,7 +542,10 @@ class MeterApi:
         session = data.get("data", {}).get("session") if isinstance(data.get("data"), dict) else None
         return session if isinstance(session, dict) else None
 
-    async def fetch_meters(self) -> List[Meter]:
+    async def fetch_meters(
+        self,
+        selected_meter_ids: set[str] | None = None,
+    ) -> List[Meter]:
         """Fetch meters with balances using discovered API endpoints.
 
         Flow:
@@ -479,6 +572,9 @@ class MeterApi:
                     normalized_asset_id = int(str(asset_id).lstrip("0") or "0")
                 except Exception:  # noqa: BLE001
                     normalized_asset_id = asset_id
+                meter_unique_id = f"{site_id}_{normalized_asset_id}"
+                if selected_meter_ids is not None and meter_unique_id not in selected_meter_ids:
+                    continue
                 asset_name = asset.get("assetName") or asset.get("name") or str(normalized_asset_id)
                 try:
                     details = await self.fetch_asset_details(site_id, normalized_asset_id)
@@ -488,6 +584,12 @@ class MeterApi:
                 util = utils[0] if utils else None
                 balance: Optional[float] = None
                 balance_reading_date = _extract_balance_reading_date(details)
+                imported_energy_kwh = _extract_imported_energy_kwh(
+                    util,
+                    allow_generic_reading=True,
+                )
+                if imported_energy_kwh is None:
+                    imported_energy_kwh = _extract_imported_energy_kwh(details)
                 socket_area: Optional[str] = None
                 socket_location: Optional[str] = None
                 socket_state: Optional[int] = None
@@ -512,7 +614,6 @@ class MeterApi:
                     if asset_session
                     else None
                 )
-                meter_unique_id = f"{site_id}_{normalized_asset_id}"
                 if meter_unique_id in seen_meter_ids:
                     continue
                 seen_meter_ids.add(meter_unique_id)
@@ -522,6 +623,7 @@ class MeterApi:
                         name=(details.get("personalInformation", {}).get("assetName") or asset_name),
                         balance=balance,
                         currency=None,
+                        imported_energy_kwh=imported_energy_kwh,
                         balance_reading_date=balance_reading_date,
                         site_id=site_id,
                         asset_id=normalized_asset_id,

@@ -6,7 +6,7 @@ This package:
 - Signs in with your Meter MACS portal credentials
 - Discovers meters from the portal API when available
 - Falls back to dashboard scraping when needed
-- Creates balance, balance-updated, last-updated, and cost-per-kWh sensors, plus supply switches where supported
+- Creates balance, imported-energy, balance-updated, last-updated, and cost-per-kWh sensors, plus supply switches where supported
 - Creates one Home Assistant device per discovered asset
 - Lets you choose which assets stay enabled from integration options
 

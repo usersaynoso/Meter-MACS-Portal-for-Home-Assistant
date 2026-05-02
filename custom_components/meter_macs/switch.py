@@ -36,6 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntity):
+    _attr_force_update = True
     _attr_icon = "mdi:power-plug"
 
     def __init__(self, entry: ConfigEntry, coordinator: MeterMacsCoordinator, api: MeterApi, meter: Meter) -> None:

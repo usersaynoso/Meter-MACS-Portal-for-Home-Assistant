@@ -52,6 +52,7 @@ API = _load_module("api")
 MeterApi = API.MeterApi
 SupplyActionError = API.SupplyActionError
 extract_balance_reading_date = API._extract_balance_reading_date
+extract_imported_energy_kwh = API._extract_imported_energy_kwh
 
 
 class _DummyClient:
@@ -298,6 +299,7 @@ def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkey
             "utilityTypes": [
                 {
                     "balance": 12.34,
+                    "reading": 512.46,
                     "areaName": "BWB Bollard 12",
                     "location": "1202",
                     "socketState": 8,
@@ -328,9 +330,55 @@ def test_fetch_meters_preserves_detail_socket_state_when_session_omits_it(monkey
     meters = asyncio.run(api.fetch_meters())
 
     assert len(meters) == 1
+    assert meters[0].imported_energy_kwh == 512.46
     assert meters[0].socket_state == 8
     assert meters[0].session_type == "current"
     assert meters[0].balance_reading_date == datetime(2026, 3, 26, 18, 48, 18, tzinfo=timezone.utc)
+
+
+def test_fetch_meters_skips_unselected_assets_before_loading_details(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_session() -> dict:
+        return {
+            "user": {
+                "sites": [
+                    {
+                        "site": {"siteId": "CRT_WM", "_id": "site-db-1"},
+                        "assets": [
+                            {"assetId": "3378", "_id": "asset-db-1", "assetName": "Selected Meter"},
+                            {"assetId": "3673", "_id": "asset-db-2", "assetName": "Skipped Meter"},
+                        ],
+                    }
+                ]
+            }
+        }
+
+    async def fake_fetch_asset_details(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        if asset_id != 3378:
+            raise AssertionError(f"unexpected asset details fetch for {asset_id}")
+        return {
+            "personalInformation": {"assetName": "Selected Meter"},
+            "utilityTypes": [{"balance": 12.34}],
+        }
+
+    async def fake_fetch_cost_per_kwh(site_id: str, asset_id: str | int) -> float:
+        assert asset_id == 3378
+        return 0.42
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int) -> dict:
+        assert asset_id == 3378
+        return {"type": "current"}
+
+    monkeypatch.setattr(api, "get_session", fake_get_session)
+    monkeypatch.setattr(api, "fetch_asset_details", fake_fetch_asset_details)
+    monkeypatch.setattr(api, "fetch_cost_per_kwh", fake_fetch_cost_per_kwh)
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+
+    meters = asyncio.run(api.fetch_meters({"CRT_WM_3378"}))
+
+    assert [meter.meter_id for meter in meters] == ["CRT_WM_3378"]
 
 
 def test_extract_balance_reading_date_finds_nested_timestamp() -> None:
@@ -351,6 +399,18 @@ def test_extract_balance_reading_date_finds_nested_timestamp() -> None:
         18,
         tzinfo=timezone.utc,
     )
+
+
+def test_extract_imported_energy_kwh_accepts_reading_and_total_used_labels() -> None:
+    assert extract_imported_energy_kwh({"reading": 512.46}, allow_generic_reading=True) == 512.46
+    assert extract_imported_energy_kwh(
+        {
+            "summary": {
+                "label": "Total Used",
+                "value": "512.46 kWh",
+            }
+        }
+    ) == 512.46
 
 
 def test_turn_off_current_session_with_socket_state_8_does_not_toggle(monkeypatch) -> None:
