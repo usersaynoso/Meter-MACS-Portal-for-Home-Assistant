@@ -91,9 +91,13 @@ def test_hacs_submission_workflows_exist() -> None:
     assert 'tags:' in release_text
     assert '- "v*"' in release_text
     assert "contents: write" in release_text
-    assert "softprops/action-gh-release@v2" in release_text
-    assert "generate_release_notes: true" in release_text
-    assert "make_latest: true" in release_text
+    assert "GH_TOKEN: ${{ github.token }}" in release_text
+    assert "RELEASE_TAG: ${{ inputs.tag || github.ref_name }}" in release_text
+    assert 'gh release view "$RELEASE_TAG"' in release_text
+    assert 'gh release create "$RELEASE_TAG"' in release_text
+    assert "--generate-notes" in release_text
+    assert "--latest" in release_text
+    assert 'gh release edit "$RELEASE_TAG" --latest' in release_text
 
 
 def test_readme_contains_image_for_hacs_rendering() -> None:
