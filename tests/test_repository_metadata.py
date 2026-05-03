@@ -92,6 +92,7 @@ def test_hacs_submission_workflows_exist() -> None:
     assert '- "v*"' in release_text
     assert "contents: write" in release_text
     assert "GH_TOKEN: ${{ github.token }}" in release_text
+    assert "GH_REPO: ${{ github.repository }}" in release_text
     assert "RELEASE_TAG: ${{ inputs.tag || github.ref_name }}" in release_text
     assert 'gh release view "$RELEASE_TAG"' in release_text
     assert 'gh release create "$RELEASE_TAG"' in release_text
