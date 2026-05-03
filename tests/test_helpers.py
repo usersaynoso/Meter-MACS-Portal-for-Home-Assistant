@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
 
@@ -16,6 +17,7 @@ assert SPEC and SPEC.loader
 SPEC.loader.exec_module(HELPERS)
 
 build_meter_device_key = HELPERS.build_meter_device_key
+coordinator_refresh_time_attribute = HELPERS.coordinator_refresh_time_attribute
 extract_meter_id_from_unique_id = HELPERS.extract_meter_id_from_unique_id
 filter_meter_ids = HELPERS.filter_meter_ids
 format_meter_display_name = HELPERS.format_meter_display_name
@@ -41,6 +43,19 @@ def test_format_meter_display_name_falls_back_to_site_id() -> None:
 
 def test_build_meter_device_key_is_stable() -> None:
     assert build_meter_device_key("entry123", "CRT_WM_3378") == "entry123_CRT_WM_3378"
+
+
+def test_coordinator_refresh_time_attribute_uses_last_refresh_time() -> None:
+    coordinator = type(
+        "Coordinator",
+        (),
+        {
+            "last_refresh_time": datetime(2026, 5, 3, 10, 15, tzinfo=timezone.utc),
+            "last_update_success_time": datetime(2026, 5, 3, 10, 10, tzinfo=timezone.utc),
+        },
+    )()
+
+    assert coordinator_refresh_time_attribute(coordinator) == "2026-05-03T10:15:00+00:00"
 
 
 def test_extract_meter_id_from_unique_id_handles_all_entity_suffixes() -> None:

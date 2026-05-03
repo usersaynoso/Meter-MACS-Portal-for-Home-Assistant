@@ -12,7 +12,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import MeterMacsCoordinator
 from .api import Meter
-from .helpers import build_meter_device_key, format_meter_display_name
+from .helpers import (
+    build_meter_device_key,
+    coordinator_refresh_time_attribute,
+    format_meter_display_name,
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
@@ -100,7 +104,7 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
     @property
     def native_unit_of_measurement(self) -> Optional[str]:
         meter = next((m for m in (self.coordinator.data or []) if m.meter_id == self._meter_id), None)
-        return meter.currency if meter else None
+        return (meter.currency or "GBP") if meter else "GBP"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -113,6 +117,7 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
             "socket_area": getattr(meter, "socket_area", None) if meter else None,
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
 
@@ -168,6 +173,7 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
             "uplift_applied": 0.05,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
 
@@ -222,6 +228,7 @@ class MeterMacsImportedEnergySensor(CoordinatorEntity[MeterMacsCoordinator], Sen
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
             "reading_date": reading_date.isoformat() if reading_date else None,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
 
@@ -274,6 +281,7 @@ class MeterMacsBalanceUpdatedSensor(CoordinatorEntity[MeterMacsCoordinator], Sen
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
             "reading_date": reading_date.isoformat() if reading_date else None,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
 
@@ -325,6 +333,7 @@ class MeterMacsLastUpdatedSensor(CoordinatorEntity[MeterMacsCoordinator], Sensor
             "socket_area": getattr(meter, "socket_area", None) if meter else None,
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
 
@@ -374,4 +383,5 @@ class MeterMacsSafetyTrippedSensor(CoordinatorEntity[MeterMacsCoordinator], Sens
             "socket_location": getattr(meter, "socket_location", None) if meter else None,
             "socket_state": getattr(meter, "socket_state", None) if meter else None,
             "session_type": getattr(meter, "session_type", None) if meter else None,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }

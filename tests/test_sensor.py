@@ -227,7 +227,7 @@ def test_sensors_force_recorder_updates_and_numeric_statistics_metadata() -> Non
         meter_id="CRT_WM_3378",
         name="The Architeuthis",
         balance=12.34,
-        currency="GBP",
+        currency=None,
         imported_energy_kwh=512.46,
         cost_per_kwh=0.42,
         balance_reading_date=datetime(2026, 3, 26, 18, 48, 18, tzinfo=timezone.utc),
@@ -237,6 +237,7 @@ def test_sensors_force_recorder_updates_and_numeric_statistics_metadata() -> Non
         session_type="current",
     )
     coordinator = _DummyCoordinator([meter])
+    coordinator.last_refresh_time = datetime(2026, 5, 3, 10, 15, tzinfo=timezone.utc)
     entry = _DummyEntry()
 
     balance = MeterMacsBalanceSensor(entry, coordinator, meter)
@@ -249,16 +250,29 @@ def test_sensors_force_recorder_updates_and_numeric_statistics_metadata() -> Non
     assert balance._attr_force_update is True
     assert getattr(balance, "_attr_device_class", None) is None
     assert balance._attr_state_class == SENSOR.SensorStateClass.MEASUREMENT
+    assert balance.native_unit_of_measurement == "GBP"
+    assert balance.extra_state_attributes["last_refresh_time"] == "2026-05-03T10:15:00+00:00"
 
     assert cost._attr_force_update is True
     assert cost._attr_state_class == SENSOR.SensorStateClass.MEASUREMENT
+    assert cost.extra_state_attributes["last_refresh_time"] == "2026-05-03T10:15:00+00:00"
 
     assert imported_energy._attr_force_update is True
     assert imported_energy._attr_state_class == SENSOR.SensorStateClass.TOTAL_INCREASING
+    assert (
+        imported_energy.extra_state_attributes["last_refresh_time"]
+        == "2026-05-03T10:15:00+00:00"
+    )
 
     assert balance_updated._attr_force_update is True
     assert last_updated._attr_force_update is True
     assert safety_tripped._attr_force_update is True
+    assert (
+        balance_updated.extra_state_attributes["last_refresh_time"]
+        == "2026-05-03T10:15:00+00:00"
+    )
+    assert last_updated.extra_state_attributes["last_refresh_time"] == "2026-05-03T10:15:00+00:00"
+    assert safety_tripped.extra_state_attributes["last_refresh_time"] == "2026-05-03T10:15:00+00:00"
 
 
 def test_last_updated_sensor_reports_coordinator_timestamp() -> None:

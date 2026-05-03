@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -139,6 +140,8 @@ class _DummyEntry:
 class _DummyCoordinator:
     def __init__(self, data) -> None:
         self.data = data
+        self.last_refresh_time = None
+        self.last_update_success_time = None
 
     async def async_request_refresh(self) -> None:
         return None
@@ -178,9 +181,14 @@ def test_supply_switch_forces_recorder_updates() -> None:
         session_type="current",
     )
     coordinator = _DummyCoordinator([meter])
+    coordinator.last_refresh_time = datetime(2026, 5, 3, 10, 15, tzinfo=timezone.utc)
     supply_switch = MeterMacsSupplySwitch(_DummyEntry(), coordinator, _DummyApi(), meter)
 
     assert supply_switch._attr_force_update is True
+    assert (
+        supply_switch.extra_state_attributes["last_refresh_time"]
+        == "2026-05-03T10:15:00+00:00"
+    )
 
 
 def test_supply_switch_clears_stale_on_state_when_refresh_omits_state_fields() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 from typing import Iterable
 
@@ -32,6 +33,16 @@ def format_meter_display_name(
 
 def build_meter_device_key(entry_id: str, meter_id: str) -> str:
     return f"{entry_id}_{meter_id}"
+
+
+def coordinator_refresh_time_attribute(coordinator: object) -> str | None:
+    refresh_time = (
+        getattr(coordinator, "last_refresh_time", None)
+        or getattr(coordinator, "last_update_success_time", None)
+    )
+    if isinstance(refresh_time, datetime):
+        return refresh_time.isoformat()
+    return None
 
 
 def extract_meter_id_from_unique_id(entry_id: str, unique_id: str) -> str | None:

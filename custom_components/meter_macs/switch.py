@@ -13,6 +13,7 @@ from .coordinator import MeterMacsCoordinator
 from .api import MeterApi, Meter, SupplyActionError
 from .helpers import (
     build_meter_device_key,
+    coordinator_refresh_time_attribute,
     format_meter_display_name,
     infer_socket_power_state,
 )
@@ -103,6 +104,7 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
             "socket_location": self._socket_location,
             "socket_state": self._socket_state,
             "session_type": self._session_type,
+            "last_refresh_time": coordinator_refresh_time_attribute(self.coordinator),
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:  # type: ignore[override]
