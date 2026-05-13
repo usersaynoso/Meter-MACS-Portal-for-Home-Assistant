@@ -346,6 +346,58 @@ def _extract_imported_energy_kwh(
     return None
 
 
+def _unwrap_data_payload(payload: Any) -> Any:
+    if isinstance(payload, dict) and isinstance(payload.get("data"), (dict, list)):
+        return payload["data"]
+    return payload
+
+
+def _extract_session_user(payload: Any) -> dict:
+    unwrapped = _unwrap_data_payload(payload)
+    if isinstance(unwrapped, dict) and isinstance(unwrapped.get("user"), dict):
+        return unwrapped["user"]
+    return {}
+
+
+def _extract_site_info(site_entry: Any) -> dict:
+    if not isinstance(site_entry, dict):
+        return {}
+    site = site_entry.get("site")
+    if isinstance(site, dict):
+        return site
+    return site_entry
+
+
+def _extract_assets_from_site_entry(site_entry: Any) -> list[dict]:
+    if not isinstance(site_entry, dict):
+        return []
+
+    assets = site_entry.get("assets")
+    if isinstance(assets, list):
+        return [asset for asset in assets if isinstance(asset, dict)]
+
+    site = site_entry.get("site")
+    if isinstance(site, dict) and isinstance(site.get("assets"), list):
+        return [asset for asset in site["assets"] if isinstance(asset, dict)]
+
+    return []
+
+
+def _extract_site_entries(payload: Any) -> list[dict]:
+    data = _unwrap_data_payload(payload)
+    if isinstance(data, list):
+        return [entry for entry in data if isinstance(entry, dict)]
+    if isinstance(data, dict) and isinstance(data.get("sites"), list):
+        return [entry for entry in data["sites"] if isinstance(entry, dict)]
+
+    user = _extract_session_user(payload)
+    sites = user.get("sites")
+    if isinstance(sites, list):
+        return [entry for entry in sites if isinstance(entry, dict)]
+
+    return []
+
+
 class ApiNotAvailable(Exception):
     pass
 
@@ -490,8 +542,20 @@ class MeterApi:
         data = await self._get_json(f"/api/sites/{site_id}/assets")
         if data.get("status") != "success":
             return []
-        assets = data.get("data", {}).get("assets", [])
-        return assets or []
+        payload = data.get("data", {})
+        if isinstance(payload, list):
+            assets = payload
+        elif isinstance(payload, dict):
+            assets = payload.get("assets", [])
+        else:
+            assets = []
+        return [asset for asset in assets if isinstance(asset, dict)]
+
+    async def fetch_account_sites(self, user_id: str) -> list[dict]:
+        data = await self._get_json(f"/api/accounts/{user_id}/sites")
+        if data.get("status") != "success":
+            return []
+        return _extract_site_entries(data)
 
     async def fetch_asset_details(self, site_id: str, asset_id: str | int) -> dict:
         # Numeric id is used in endpoint
@@ -554,17 +618,28 @@ class MeterApi:
         - For each (siteId, assetId) -> GET /api/sites/{siteId}/assets/{numericAssetId}
         """
         session = await self.get_session()
-        user = session.get("user", {})
-        sites = user.get("sites", []) or []
+        user = _extract_session_user(session)
+        sites = _extract_site_entries(session)
+        if not sites and user.get("id"):
+            try:
+                sites = await self.fetch_account_sites(str(user["id"]))
+            except Exception:  # noqa: BLE001
+                sites = []
         meters: List[Meter] = []
         seen_meter_ids: set[str] = set()
         for site_entry in sites:
-            site_info = site_entry.get("site", {}) or {}
+            site_info = _extract_site_info(site_entry)
             site_id = site_info.get("siteId")
             site_db_id = site_info.get("_id")
             if not site_id:
                 continue
-            for asset in site_entry.get("assets", []) or []:
+            assets = _extract_assets_from_site_entry(site_entry)
+            if not assets:
+                try:
+                    assets = await self.fetch_assets(site_id)
+                except Exception:  # noqa: BLE001
+                    assets = []
+            for asset in assets:
                 asset_id = asset.get("assetId") or asset.get("_id")
                 asset_db_id = asset.get("_id")
                 # Normalize asset id to ensure stable unique IDs (strip leading zeros)

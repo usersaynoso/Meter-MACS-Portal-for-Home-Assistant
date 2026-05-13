@@ -381,6 +381,172 @@ def test_fetch_meters_skips_unselected_assets_before_loading_details(monkeypatch
     assert [meter.meter_id for meter in meters] == ["CRT_WM_3378"]
 
 
+def test_fetch_assets_accepts_direct_data_array(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_json(path: str) -> dict:
+        assert path == "/api/sites/CRT_WM/assets"
+        return {
+            "status": "success",
+            "data": [
+                {"assetId": "3378", "_id": "asset-db-1", "assetName": "Selected Meter"}
+            ],
+        }
+
+    monkeypatch.setattr(api, "_get_json", fake_get_json)
+
+    assets = asyncio.run(api.fetch_assets("CRT_WM"))
+
+    assert assets == [
+        {"assetId": "3378", "_id": "asset-db-1", "assetName": "Selected Meter"}
+    ]
+
+
+def test_fetch_meters_reads_session_data_wrapper(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_session() -> dict:
+        return {
+            "data": {
+                "user": {
+                    "sites": [
+                        {
+                            "site": {"siteId": "CRT_WM", "_id": "site-db-1"},
+                            "assets": [
+                                {
+                                    "assetId": "3378",
+                                    "_id": "asset-db-1",
+                                    "assetName": "Selected Meter",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
+
+    async def fake_fetch_asset_details(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return {
+            "personalInformation": {"assetName": "Selected Meter"},
+            "utilityTypes": [{"balance": 12.34, "reading": 512.46}],
+        }
+
+    async def fake_fetch_cost_per_kwh(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    monkeypatch.setattr(api, "get_session", fake_get_session)
+    monkeypatch.setattr(api, "fetch_asset_details", fake_fetch_asset_details)
+    monkeypatch.setattr(api, "fetch_cost_per_kwh", fake_fetch_cost_per_kwh)
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+
+    meters = asyncio.run(api.fetch_meters())
+
+    assert [meter.meter_id for meter in meters] == ["CRT_WM_3378"]
+    assert meters[0].name == "Selected Meter"
+    assert meters[0].balance == 12.34
+
+
+def test_fetch_meters_falls_back_to_account_sites_with_nested_assets(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_session() -> dict:
+        return {"user": {"id": "user-1", "sites": []}}
+
+    async def fake_fetch_account_sites(user_id: str) -> list[dict]:
+        assert user_id == "user-1"
+        return [
+            {
+                "site": {
+                    "siteId": "CRT_WM",
+                    "_id": "site-db-1",
+                    "assets": [
+                        {
+                            "assetId": "3378",
+                            "_id": "asset-db-1",
+                            "assetName": "Nested Meter",
+                        }
+                    ],
+                }
+            }
+        ]
+
+    async def fake_fetch_asset_details(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return {
+            "personalInformation": {"assetName": "Nested Meter"},
+            "utilityTypes": [{"balance": 22.22, "reading": 600.0}],
+        }
+
+    async def fake_fetch_cost_per_kwh(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    monkeypatch.setattr(api, "get_session", fake_get_session)
+    monkeypatch.setattr(api, "fetch_account_sites", fake_fetch_account_sites)
+    monkeypatch.setattr(api, "fetch_asset_details", fake_fetch_asset_details)
+    monkeypatch.setattr(api, "fetch_cost_per_kwh", fake_fetch_cost_per_kwh)
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+
+    meters = asyncio.run(api.fetch_meters())
+
+    assert [meter.meter_id for meter in meters] == ["CRT_WM_3378"]
+    assert meters[0].name == "Nested Meter"
+    assert meters[0].balance == 22.22
+
+
+def test_fetch_meters_loads_assets_when_session_site_has_none(monkeypatch) -> None:
+    api = MeterApi(_DummyClient())
+
+    async def fake_get_session() -> dict:
+        return {
+            "user": {
+                "sites": [
+                    {
+                        "site": {"siteId": "CRT_WM", "_id": "site-db-1"},
+                    }
+                ]
+            }
+        }
+
+    async def fake_fetch_assets(site_id: str) -> list[dict]:
+        assert site_id == "CRT_WM"
+        return [{"assetId": "3378", "_id": "asset-db-1", "assetName": "Fetched Meter"}]
+
+    async def fake_fetch_asset_details(site_id: str, asset_id: str | int) -> dict:
+        assert site_id == "CRT_WM"
+        assert asset_id == 3378
+        return {
+            "personalInformation": {"assetName": "Fetched Meter"},
+            "utilityTypes": [{"balance": 33.33, "reading": 700.0}],
+        }
+
+    async def fake_fetch_cost_per_kwh(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    async def fake_fetch_asset_session(site_id: str, asset_id: str | int) -> None:
+        return None
+
+    monkeypatch.setattr(api, "get_session", fake_get_session)
+    monkeypatch.setattr(api, "fetch_assets", fake_fetch_assets)
+    monkeypatch.setattr(api, "fetch_asset_details", fake_fetch_asset_details)
+    monkeypatch.setattr(api, "fetch_cost_per_kwh", fake_fetch_cost_per_kwh)
+    monkeypatch.setattr(api, "fetch_asset_session", fake_fetch_asset_session)
+
+    meters = asyncio.run(api.fetch_meters())
+
+    assert [meter.meter_id for meter in meters] == ["CRT_WM_3378"]
+    assert meters[0].name == "Fetched Meter"
+    assert meters[0].balance == 33.33
+
+
 def test_extract_balance_reading_date_finds_nested_timestamp() -> None:
     payload = {
         "asset": {
