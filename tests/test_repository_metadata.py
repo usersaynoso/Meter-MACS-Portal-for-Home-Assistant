@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "custom_components" / "meter_macs" / "manifest.json"
 HACS_PATH = REPO_ROOT / "hacs.json"
 README_PATH = REPO_ROOT / "README.md"
+LICENSE_PATH = REPO_ROOT / "LICENSE"
 BRAND_DIR = REPO_ROOT / "custom_components" / "meter_macs" / "brand"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
@@ -28,7 +29,7 @@ def test_manifest_has_github_metadata_and_real_codeowner() -> None:
     )
     assert data["issue_tracker"].endswith("/issues")
     assert data["codeowners"] == ["@usersaynoso"]
-    assert data["version"] == "0.1.25"
+    assert data["version"] == "0.1.26"
 
 
 def test_manifest_keys_match_hassfest_order() -> None:
@@ -106,6 +107,15 @@ def test_readme_contains_image_for_hacs_rendering() -> None:
 
     assert "![Meter MACS logo]" in text
     assert "custom_components/meter_macs/brand/logo.png" in text
+
+
+def test_repository_has_recognized_root_license() -> None:
+    text = LICENSE_PATH.read_text(encoding="utf-8")
+
+    assert LICENSE_PATH.is_file()
+    assert text.startswith("MIT License")
+    assert "Permission is hereby granted, free of charge" in text
+    assert "THE SOFTWARE IS PROVIDED \"AS IS\"" in text
 
 
 def test_agents_file_requires_manifest_version_bumps() -> None:
