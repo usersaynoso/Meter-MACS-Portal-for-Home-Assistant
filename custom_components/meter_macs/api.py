@@ -25,6 +25,8 @@ from .helpers import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_AUTH_FAILURE_STATUSES = {401, 403}
+
 
 class AuthError(Exception):
     pass
@@ -67,6 +69,10 @@ class MeterMacsClient:
             return
         await self._login()
 
+    async def reauthenticate(self) -> None:
+        self._logged_in = False
+        await self._login()
+
     async def _get(self, path: str) -> aiohttp.ClientResponse:
         url = urljoin(self._base_url + "/", path.lstrip("/"))
         _LOGGER.debug("GET %s", url)
@@ -80,6 +86,7 @@ class MeterMacsClient:
         return resp
 
     async def _login(self) -> None:
+        self._logged_in = False
         # Preferred auth: Better Auth email sign-in endpoint
         try:
             url = "/api/auth/sign-in/email"
@@ -219,7 +226,7 @@ class MeterMacsClient:
         return await resp.text()
 
 
-async def _read_json_response(resp: aiohttp.ClientResponse) -> dict:
+async def _read_json_response(resp: aiohttp.ClientResponse) -> Any:
     # Endpoints may respond with content-type text/plain; parse manually
     text = await resp.text()
     try:
@@ -429,35 +436,65 @@ class MeterApi:
         content_type: str = "application/json",
     ) -> dict:
         await self._client.ensure_logged_in()
-        resp = await self._client._session.post(
-            self._server_action_url,
-            data=json.dumps(payload),
-            headers={
-                "Accept": "text/x-component",
-                "Content-Type": content_type,
-                "Next-Action": action_id,
-                "Origin": self._client._base_url,
-                "Referer": self._server_action_url,
-            },
-            allow_redirects=True,
-        )
+
+        async def post_action() -> aiohttp.ClientResponse:
+            return await self._client._session.post(
+                self._server_action_url,
+                data=json.dumps(payload),
+                headers={
+                    "Accept": "text/x-component",
+                    "Content-Type": content_type,
+                    "Next-Action": action_id,
+                    "Origin": self._client._base_url,
+                    "Referer": self._server_action_url,
+                },
+                allow_redirects=True,
+            )
+
+        resp = await post_action()
+        if resp.status in _AUTH_FAILURE_STATUSES:
+            await self._client.reauthenticate()
+            resp = await post_action()
+            if resp.status in _AUTH_FAILURE_STATUSES:
+                raise AuthError("Authentication required")
         if resp.status != 200:
             raise ScrapeError(f"Unexpected status {resp.status} from server action {action_id}")
         text = await resp.text()
+        if self._client._looks_like_login_page(text):
+            await self._client.reauthenticate()
+            resp = await post_action()
+            if resp.status in _AUTH_FAILURE_STATUSES:
+                raise AuthError("Authentication required")
+            if resp.status != 200:
+                raise ScrapeError(f"Unexpected status {resp.status} from server action {action_id}")
+            text = await resp.text()
         try:
             return parse_next_action_payload(text)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Failed to parse server action payload: %s", text[:400])
             raise ScrapeError("Failed to parse server action response") from exc
 
-    async def _get_json(self, path: str) -> dict:
+    async def _get_json(self, path: str, *, retry_auth: bool = True) -> dict:
         await self._client.ensure_logged_in()
         resp = await self._client._get(path)
+        if resp.status in _AUTH_FAILURE_STATUSES:
+            if retry_auth:
+                await self._client.reauthenticate()
+                return await self._get_json(path, retry_auth=False)
+            raise AuthError("Authentication required")
         if resp.status == 404:
             raise ApiNotAvailable(f"Endpoint not found: {path}")
         if resp.status != 200:
             raise ScrapeError(f"Unexpected status {resp.status} for {path}")
-        return await _read_json_response(resp)
+        payload = await _read_json_response(resp)
+        if path == "/api/auth/get-session" and not isinstance(payload, dict):
+            if retry_auth:
+                await self._client.reauthenticate()
+                return await self._get_json(path, retry_auth=False)
+            raise AuthError("Authentication required")
+        if not isinstance(payload, dict):
+            raise ScrapeError("Unexpected JSON response")
+        return payload
 
     async def _verify_supply_state(
         self,

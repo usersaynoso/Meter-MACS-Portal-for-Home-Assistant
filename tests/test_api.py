@@ -50,6 +50,7 @@ def _load_module(module_name: str):
 API = _load_module("api")
 
 MeterApi = API.MeterApi
+AuthError = API.AuthError
 SupplyActionError = API.SupplyActionError
 extract_balance_reading_date = API._extract_balance_reading_date
 extract_imported_energy_kwh = API._extract_imported_energy_kwh
@@ -58,6 +59,85 @@ extract_imported_energy_kwh = API._extract_imported_energy_kwh
 class _DummyClient:
     def __init__(self) -> None:
         self._base_url = "https://portal.meter-macs.com"
+
+
+class _FakeResponse:
+    def __init__(self, status: int, body: str) -> None:
+        self.status = status
+        self._body = body
+
+    async def text(self) -> str:
+        return self._body
+
+
+class _RetryClient:
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self._base_url = "https://portal.meter-macs.com"
+        self._responses = responses
+        self.paths: list[str] = []
+        self.reauthenticate_calls = 0
+
+    async def ensure_logged_in(self) -> None:
+        return None
+
+    async def reauthenticate(self) -> None:
+        self.reauthenticate_calls += 1
+
+    async def _get(self, path: str) -> _FakeResponse:
+        self.paths.append(path)
+        return self._responses.pop(0)
+
+
+def test_get_session_reauthenticates_when_portal_returns_null_session() -> None:
+    client = _RetryClient(
+        [
+            _FakeResponse(200, "null"),
+            _FakeResponse(200, '{"user":{"sites":[]}}'),
+        ]
+    )
+    api = MeterApi(client)
+
+    session = asyncio.run(api.get_session())
+
+    assert session == {"user": {"sites": []}}
+    assert client.reauthenticate_calls == 1
+    assert client.paths == ["/api/auth/get-session", "/api/auth/get-session"]
+
+
+def test_get_json_reauthenticates_after_unauthorized_response() -> None:
+    client = _RetryClient(
+        [
+            _FakeResponse(401, '{"error":"Authentication required"}'),
+            _FakeResponse(
+                200,
+                '{"status":"success","data":{"assets":[{"assetId":"3378","assetName":"Home"}]}}',
+            ),
+        ]
+    )
+    api = MeterApi(client)
+
+    assets = asyncio.run(api.fetch_assets("CRT_WM"))
+
+    assert assets == [{"assetId": "3378", "assetName": "Home"}]
+    assert client.reauthenticate_calls == 1
+    assert client.paths == ["/api/sites/CRT_WM/assets", "/api/sites/CRT_WM/assets"]
+
+
+def test_get_session_raises_auth_error_when_reauthentication_still_has_no_session() -> None:
+    client = _RetryClient(
+        [
+            _FakeResponse(200, "null"),
+            _FakeResponse(200, "null"),
+        ]
+    )
+    api = MeterApi(client)
+
+    try:
+        asyncio.run(api.get_session())
+    except AuthError:
+        pass
+    else:
+        raise AssertionError("AuthError was not raised")
 
 
 def test_turn_on_treats_async_arrive_as_success(monkeypatch) -> None:

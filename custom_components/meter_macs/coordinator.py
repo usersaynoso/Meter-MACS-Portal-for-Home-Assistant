@@ -43,6 +43,8 @@ class MeterMacsCoordinator(DataUpdateCoordinator[List[Meter]]):
             # Prefer JSON API if available
             try:
                 meters = await self._api.fetch_meters(self._selected_meter_ids)
+            except AuthError:
+                raise
             except Exception:
                 # Fallback to HTML parsing if API is not available
                 html = await self._client.fetch_dashboard()
