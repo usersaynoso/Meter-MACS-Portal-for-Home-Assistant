@@ -138,9 +138,12 @@ Validation rules:
 The integration includes a Home Assistant diagnostics handler.
 
 Current diagnostics output includes:
-- Redacted email value
-- Number of discovered meters
-- A small sample of up to three detected meters
+- Redacted account and password indicators
+- Integration version, selected meter options, and scan interval context
+- Login/session status, including whether Meter MACS auth cookies are present
+- Coordinator refresh times and the latest captured exception
+- Current and discovered meter counts
+- A small sample of detected meter data, including site/asset IDs, reading dates, socket state, and session type
 
 To troubleshoot login or parsing problems, enable debug logging for:
 

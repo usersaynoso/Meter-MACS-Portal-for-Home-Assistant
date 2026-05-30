@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from http.cookies import SimpleCookie
 import logging
 import re
 from dataclasses import dataclass
@@ -63,6 +64,12 @@ class MeterMacsClient:
         self._password = password
         self._base_url = BASE_URL.rstrip("/")
         self._logged_in = False
+        self._auth_cookie_header: str | None = None
+        self._auth_cookie_names: list[str] = []
+        self.last_login_status: int | None = None
+        self.last_login_error: str | None = None
+        self.last_session_validated: bool | None = None
+        self.last_auth_failure: str | None = None
 
     async def ensure_logged_in(self) -> None:
         if self._logged_in:
@@ -73,20 +80,41 @@ class MeterMacsClient:
         self._logged_in = False
         await self._login()
 
+    def _request_headers(self, headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+        request_headers = dict(headers or {})
+        if self._auth_cookie_header:
+            request_headers.setdefault("Cookie", self._auth_cookie_header)
+        return request_headers
+
     async def _get(self, path: str) -> aiohttp.ClientResponse:
         url = urljoin(self._base_url + "/", path.lstrip("/"))
         _LOGGER.debug("GET %s", url)
-        resp = await self._session.get(url, allow_redirects=True)
+        resp = await self._session.get(
+            url,
+            headers=self._request_headers(),
+            allow_redirects=True,
+        )
         return resp
 
     async def _post(self, path_or_url: str, data: Dict[str, Any], headers: Optional[Dict[str, str]] = None) -> aiohttp.ClientResponse:
         url = urljoin(self._base_url + "/", path_or_url)
         _LOGGER.debug("POST %s", url)
-        resp = await self._session.post(url, data=data, headers=headers or {}, allow_redirects=True)
+        resp = await self._session.post(
+            url,
+            data=data,
+            headers=self._request_headers(headers),
+            allow_redirects=True,
+        )
         return resp
 
     async def _login(self) -> None:
         self._logged_in = False
+        self._auth_cookie_header = None
+        self._auth_cookie_names = []
+        self.last_login_status = None
+        self.last_login_error = None
+        self.last_session_validated = None
+        self.last_auth_failure = None
         # Preferred auth: Better Auth email sign-in endpoint
         try:
             url = "/api/auth/sign-in/email"
@@ -96,18 +124,22 @@ class MeterMacsClient:
                 json=payload,
                 allow_redirects=True,
             )
+            self.last_login_status = resp.status
             if resp.status == 200:
-                # Consider logged in if token present or cookie set
                 try:
                     body = await resp.json(content_type=None)
                 except Exception:  # noqa: BLE001
                     body = {}
-                if body or resp.headers.get("set-cookie"):
+                self._capture_auth_cookies(resp)
+                if self._is_successful_login_payload(body) and await self._validate_session():
                     self._logged_in = True
                     _LOGGER.debug("Login successful via /api/auth/sign-in/email")
                     return
-        except Exception:  # noqa: BLE001
-            pass
+                self.last_login_error = "Sign-in response did not create a usable session"
+            elif resp.status in _AUTH_FAILURE_STATUSES:
+                self.last_login_error = "Invalid authentication"
+        except Exception as err:  # noqa: BLE001
+            self.last_login_error = str(err)
 
         # Fallback: try to reach dashboard; if redirected to login, attempt to submit form
         resp = await self._get("/dashboard")
@@ -142,6 +174,7 @@ class MeterMacsClient:
         form_data[password_key] = self._password
 
         resp3 = await self._post(action, data=form_data, headers=headers)
+        self._capture_auth_cookies(resp3)
         _ = await resp3.text()
 
         check = await self._get("/dashboard")
@@ -151,6 +184,48 @@ class MeterMacsClient:
             _LOGGER.debug("Login successful via HTML form fallback")
             return
         raise AuthError("Invalid authentication or login failed")
+
+    def _capture_auth_cookies(self, resp: aiohttp.ClientResponse) -> None:
+        cookies = SimpleCookie()
+        for header in resp.headers.getall("Set-Cookie", []):
+            cookies.load(header)
+        values = [
+            f"{key}={morsel.value}"
+            for key, morsel in cookies.items()
+            if key.startswith("__Secure-meter-macs.")
+        ]
+        if not values:
+            return
+        self._auth_cookie_names = list(cookies.keys())
+        self._auth_cookie_header = "; ".join(values)
+
+    def _is_successful_login_payload(self, body: Any) -> bool:
+        return (
+            isinstance(body, dict)
+            and isinstance(body.get("user"), dict)
+            and isinstance(body.get("token"), str)
+            and bool(self._auth_cookie_header)
+        )
+
+    async def _validate_session(self) -> bool:
+        resp = await self._session.get(
+            urljoin(self._base_url + "/", "api/auth/get-session"),
+            headers=self._request_headers(),
+            allow_redirects=True,
+        )
+        if resp.status in _AUTH_FAILURE_STATUSES:
+            self.last_session_validated = False
+            return False
+        if resp.status != 200:
+            self.last_session_validated = False
+            return False
+        try:
+            payload = await _read_json_response(resp)
+        except ScrapeError:
+            self.last_session_validated = False
+            return False
+        self.last_session_validated = isinstance(payload, dict) and isinstance(payload.get("user"), dict)
+        return self.last_session_validated
 
     def _looks_like_login_page(self, html: str) -> bool:
         soup = BeautifulSoup(html, "html.parser")
@@ -441,21 +516,23 @@ class MeterApi:
             return await self._client._session.post(
                 self._server_action_url,
                 data=json.dumps(payload),
-                headers={
+                headers=self._client._request_headers({
                     "Accept": "text/x-component",
                     "Content-Type": content_type,
                     "Next-Action": action_id,
                     "Origin": self._client._base_url,
                     "Referer": self._server_action_url,
-                },
+                }),
                 allow_redirects=True,
             )
 
         resp = await post_action()
         if resp.status in _AUTH_FAILURE_STATUSES:
+            self._client.last_auth_failure = f"{resp.status} for server action {action_id}"
             await self._client.reauthenticate()
             resp = await post_action()
             if resp.status in _AUTH_FAILURE_STATUSES:
+                self._client.last_auth_failure = f"{resp.status} for server action {action_id}"
                 raise AuthError("Authentication required")
         if resp.status != 200:
             raise ScrapeError(f"Unexpected status {resp.status} from server action {action_id}")
@@ -478,6 +555,7 @@ class MeterApi:
         await self._client.ensure_logged_in()
         resp = await self._client._get(path)
         if resp.status in _AUTH_FAILURE_STATUSES:
+            self._client.last_auth_failure = f"{resp.status} for {path}"
             if retry_auth:
                 await self._client.reauthenticate()
                 return await self._get_json(path, retry_auth=False)
@@ -488,6 +566,7 @@ class MeterApi:
             raise ScrapeError(f"Unexpected status {resp.status} for {path}")
         payload = await _read_json_response(resp)
         if path == "/api/auth/get-session" and not isinstance(payload, dict):
+            self._client.last_auth_failure = "Empty auth session"
             if retry_auth:
                 await self._client.reauthenticate()
                 return await self._get_json(path, retry_auth=False)

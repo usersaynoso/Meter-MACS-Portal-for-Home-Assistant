@@ -62,12 +62,80 @@ class _DummyClient:
 
 
 class _FakeResponse:
-    def __init__(self, status: int, body: str) -> None:
+    def __init__(self, status: int, body: str, headers: dict[str, str | list[str]] | None = None) -> None:
         self.status = status
         self._body = body
+        self.headers = _FakeHeaders(headers or {})
 
     async def text(self) -> str:
         return self._body
+
+    async def json(self, content_type=None):
+        import json
+
+        return json.loads(self._body)
+
+
+class _FakeHeaders:
+    def __init__(self, values: dict[str, str | list[str]]) -> None:
+        self._values = {key.lower(): value for key, value in values.items()}
+
+    def get(self, key: str, default=None):
+        value = self._values.get(key.lower(), default)
+        if isinstance(value, list):
+            return value[0] if value else default
+        return value
+
+    def getall(self, key: str, default=None):
+        value = self._values.get(key.lower())
+        if value is None:
+            return [] if default is None else default
+        return value if isinstance(value, list) else [value]
+
+
+class _CookieLoginSession:
+    def __init__(self) -> None:
+        self.get_headers: list[dict[str, str]] = []
+
+    async def post(self, url: str, *, json: dict, allow_redirects: bool) -> _FakeResponse:
+        assert url.endswith("/api/auth/sign-in/email")
+        return _FakeResponse(
+            200,
+            '{"redirect":false,"token":"session-token","user":{"id":"user-1"}}',
+            {
+                "Set-Cookie": [
+                    "__Secure-meter-macs.session_token=session-token; Path=/; Secure; HttpOnly",
+                    "__Secure-meter-macs.dont_remember=true; Path=/; Secure",
+                    "__Secure-meter-macs.session_data=session-data; Path=/; Secure",
+                ]
+            },
+        )
+
+    async def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _FakeResponse:
+        self.get_headers.append(headers)
+        if url.endswith("/api/auth/get-session") and "session_data=session-data" in headers.get("Cookie", ""):
+            return _FakeResponse(200, '{"user":{"id":"user-1","sites":[]}}')
+        return _FakeResponse(200, "null")
+
+
+def test_login_reuses_captured_better_auth_cookies_when_session_cookie_jar_is_empty() -> None:
+    session = _CookieLoginSession()
+    client = API.MeterMacsClient(session=session, email="user@example.com", password="secret")
+
+    asyncio.run(client.ensure_logged_in())
+
+    assert client._logged_in is True
+    assert client.last_session_validated is True
+    assert sorted(client._auth_cookie_names) == [
+        "__Secure-meter-macs.dont_remember",
+        "__Secure-meter-macs.session_data",
+        "__Secure-meter-macs.session_token",
+    ]
+    assert session.get_headers[-1]["Cookie"] == (
+        "__Secure-meter-macs.session_token=session-token; "
+        "__Secure-meter-macs.dont_remember=true; "
+        "__Secure-meter-macs.session_data=session-data"
+    )
 
 
 class _RetryClient:
