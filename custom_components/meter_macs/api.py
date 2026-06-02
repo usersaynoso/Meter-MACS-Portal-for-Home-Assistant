@@ -27,6 +27,8 @@ from .helpers import (
 _LOGGER = logging.getLogger(__name__)
 
 _AUTH_FAILURE_STATUSES = {401, 403}
+_AUTH_COOKIE_PREFIX = "__Secure-meter-macs."
+_SIGN_IN_PATH = "/api/auth/sign-in/email"
 
 
 class AuthError(Exception):
@@ -80,11 +82,29 @@ class MeterMacsClient:
         self._logged_in = False
         await self._login()
 
+    def _clear_auth_cookies_from_session(self) -> None:
+        cookie_jar = getattr(self._session, "cookie_jar", None)
+        if cookie_jar is None:
+            return
+        clear_domain = getattr(cookie_jar, "clear_domain", None)
+        if callable(clear_domain):
+            try:
+                clear_domain("portal.meter-macs.com")
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Unable to clear Meter MACS cookies from session jar", exc_info=True)
+
     def _request_headers(self, headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         request_headers = dict(headers or {})
         if self._auth_cookie_header:
             request_headers.setdefault("Cookie", self._auth_cookie_header)
         return request_headers
+
+    def _login_headers(self) -> Dict[str, str]:
+        return {
+            "Accept": "application/json, text/plain, */*",
+            "Origin": self._base_url,
+            "Referer": f"{self._base_url}/login",
+        }
 
     async def _get(self, path: str) -> aiohttp.ClientResponse:
         url = urljoin(self._base_url + "/", path.lstrip("/"))
@@ -115,13 +135,14 @@ class MeterMacsClient:
         self.last_login_error = None
         self.last_session_validated = None
         self.last_auth_failure = None
+        self._clear_auth_cookies_from_session()
         # Preferred auth: Better Auth email sign-in endpoint
         try:
-            url = "/api/auth/sign-in/email"
             payload = {"email": self._email, "password": self._password, "rememberMe": False}
             resp = await self._session.post(
-                urljoin(self._base_url + "/", url.lstrip("/")),
+                urljoin(self._base_url + "/", _SIGN_IN_PATH.lstrip("/")),
                 json=payload,
+                headers=self._login_headers(),
                 allow_redirects=True,
             )
             self.last_login_status = resp.status
@@ -137,14 +158,14 @@ class MeterMacsClient:
                     return
                 self.last_login_error = "Sign-in response did not create a usable session"
             elif resp.status in _AUTH_FAILURE_STATUSES:
-                self.last_login_error = "Invalid authentication"
+                self.last_login_error = await self._auth_error_message(resp)
         except Exception as err:  # noqa: BLE001
             self.last_login_error = str(err)
 
         # Fallback: try to reach dashboard; if redirected to login, attempt to submit form
         resp = await self._get("/dashboard")
         text = await resp.text()
-        if resp.status == 200 and not self._looks_like_login_page(text):
+        if resp.status == 200 and not self._looks_like_login_page(text) and await self._validate_session():
             _LOGGER.debug("Already logged in (dashboard accessible)")
             self._logged_in = True
             return
@@ -179,11 +200,31 @@ class MeterMacsClient:
 
         check = await self._get("/dashboard")
         check_text = await check.text()
-        if check.status == 200 and not self._looks_like_login_page(check_text):
+        if (
+            check.status == 200
+            and not self._looks_like_login_page(check_text)
+            and await self._validate_session()
+        ):
             self._logged_in = True
             _LOGGER.debug("Login successful via HTML form fallback")
             return
         raise AuthError("Invalid authentication or login failed")
+
+    async def _auth_error_message(self, resp: aiohttp.ClientResponse) -> str:
+        try:
+            payload = await _read_json_response(resp)
+        except ScrapeError:
+            return f"Authentication failed with status {resp.status}"
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            message = payload.get("message")
+            if code and message:
+                return f"{code}: {message}"
+            if message:
+                return str(message)
+            if code:
+                return str(code)
+        return f"Authentication failed with status {resp.status}"
 
     def _capture_auth_cookies(self, resp: aiohttp.ClientResponse) -> None:
         cookies = SimpleCookie()
@@ -192,7 +233,7 @@ class MeterMacsClient:
         values = [
             f"{key}={morsel.value}"
             for key, morsel in cookies.items()
-            if key.startswith("__Secure-meter-macs.")
+            if key.startswith(_AUTH_COOKIE_PREFIX)
         ]
         if not values:
             return

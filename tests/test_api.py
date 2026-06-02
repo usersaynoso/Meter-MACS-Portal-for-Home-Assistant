@@ -96,9 +96,19 @@ class _FakeHeaders:
 class _CookieLoginSession:
     def __init__(self) -> None:
         self.get_headers: list[dict[str, str]] = []
+        self.post_headers: list[dict[str, str]] = []
+        self.cookie_jar = _FakeCookieJar()
 
-    async def post(self, url: str, *, json: dict, allow_redirects: bool) -> _FakeResponse:
+    async def post(
+        self,
+        url: str,
+        *,
+        json: dict,
+        headers: dict[str, str],
+        allow_redirects: bool,
+    ) -> _FakeResponse:
         assert url.endswith("/api/auth/sign-in/email")
+        self.post_headers.append(headers)
         return _FakeResponse(
             200,
             '{"redirect":false,"token":"session-token","user":{"id":"user-1"}}',
@@ -118,6 +128,14 @@ class _CookieLoginSession:
         return _FakeResponse(200, "null")
 
 
+class _FakeCookieJar:
+    def __init__(self) -> None:
+        self.cleared_domains: list[str] = []
+
+    def clear_domain(self, domain: str) -> None:
+        self.cleared_domains.append(domain)
+
+
 def test_login_reuses_captured_better_auth_cookies_when_session_cookie_jar_is_empty() -> None:
     session = _CookieLoginSession()
     client = API.MeterMacsClient(session=session, email="user@example.com", password="secret")
@@ -126,6 +144,9 @@ def test_login_reuses_captured_better_auth_cookies_when_session_cookie_jar_is_em
 
     assert client._logged_in is True
     assert client.last_session_validated is True
+    assert session.cookie_jar.cleared_domains == ["portal.meter-macs.com"]
+    assert session.post_headers[-1]["Origin"] == "https://portal.meter-macs.com"
+    assert session.post_headers[-1]["Referer"] == "https://portal.meter-macs.com/login"
     assert sorted(client._auth_cookie_names) == [
         "__Secure-meter-macs.dont_remember",
         "__Secure-meter-macs.session_data",
@@ -136,6 +157,44 @@ def test_login_reuses_captured_better_auth_cookies_when_session_cookie_jar_is_em
         "__Secure-meter-macs.dont_remember=true; "
         "__Secure-meter-macs.session_data=session-data"
     )
+
+
+class _DashboardShellSession:
+    cookie_jar = _FakeCookieJar()
+
+    async def post(
+        self,
+        url: str,
+        *,
+        json: dict,
+        headers: dict[str, str],
+        allow_redirects: bool,
+    ) -> _FakeResponse:
+        return _FakeResponse(401, '{"code":"INVALID_EMAIL_OR_PASSWORD","message":"Invalid email or password"}')
+
+    async def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _FakeResponse:
+        if url.endswith("/api/auth/get-session"):
+            return _FakeResponse(200, "null")
+        return _FakeResponse(200, "<html><body><div id='dashboard-shell'></div></body></html>")
+
+
+def test_login_does_not_accept_dashboard_shell_without_valid_session() -> None:
+    client = API.MeterMacsClient(
+        session=_DashboardShellSession(),
+        email="user@example.com",
+        password="secret",
+    )
+
+    try:
+        asyncio.run(client.ensure_logged_in())
+    except AuthError:
+        pass
+    else:
+        raise AssertionError("AuthError was not raised")
+
+    assert client._logged_in is False
+    assert client.last_session_validated is False
+    assert client.last_login_error == "INVALID_EMAIL_OR_PASSWORD: Invalid email or password"
 
 
 class _RetryClient:
