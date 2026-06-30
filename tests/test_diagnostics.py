@@ -141,7 +141,7 @@ def test_diagnostics_include_auth_and_meter_debug_data_without_secrets() -> None
 
     diagnostics = asyncio.run(DIAGNOSTICS.async_get_config_entry_diagnostics(hass, entry))
 
-    assert diagnostics["version"] == "0.1.29"
+    assert diagnostics["version"] == "0.1.30"
     assert diagnostics["email"] == "***"
     assert diagnostics["has_password"] is True
     assert "secret" not in str(diagnostics)
