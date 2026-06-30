@@ -38,7 +38,6 @@ jobs:
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" meter_macs.zip --clobber
-            gh release edit "$RELEASE_TAG" --latest
             exit 0
           fi
 
@@ -53,7 +52,6 @@ jobs:
           for attempt in 1 2 3; do
             if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
               gh release upload "$RELEASE_TAG" meter_macs.zip --clobber
-              gh release edit "$RELEASE_TAG" --latest
               exit 0
             fi
             sleep $((attempt * 5))
