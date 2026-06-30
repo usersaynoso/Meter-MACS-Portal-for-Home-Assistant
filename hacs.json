@@ -1,4 +1,6 @@
 {
   "name": "Meter MACS",
-  "country": "GB"
+  "country": "GB",
+  "zip_release": true,
+  "filename": "meter_macs.zip"
 }
