@@ -726,7 +726,7 @@ class MeterApi:
         return data.get("data", {})
 
     async def fetch_cost_per_kwh(self, site_id: str, asset_id: str | int) -> Optional[float]:
-        """Return standardRate with a 5% uplift from dashboard session data.
+        """Return standardRate adjusted by the VAT the portal reports for it.
 
         Endpoint: /api/dashboard-data/{siteId}/{assetId}/session?utilityType=electricity
         """
@@ -749,7 +749,16 @@ class MeterApi:
             return None
         rate = first.get("standardRate")
         if isinstance(rate, (int, float)):
-            return float(rate) * 1.05
+            excl = first.get("standardCostExclVat")
+            incl = first.get("standardCostInclVat")
+            multiplier = 1.0
+            if (
+                isinstance(excl, (int, float))
+                and isinstance(incl, (int, float))
+                and excl > 0
+            ):
+                multiplier = float(incl) / float(excl)
+            return float(rate) * multiplier
         return None
 
     async def fetch_asset_session(self, site_id: str, asset_id: str | int) -> dict | None:

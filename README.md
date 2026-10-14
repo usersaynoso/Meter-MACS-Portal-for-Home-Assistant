@@ -67,7 +67,7 @@ The integration currently registers sensor and switch platforms.
 | Energy imported from grid | `Meter MACS Home Energy Imported From Grid` | Cumulative kWh reading derived from the portal `reading` / total-used data so Home Assistant Energy can use it |
 | Balance updated | `Meter MACS Home Balance Updated` | Time-only sensor derived from the asset `readingDate` returned by the Meter MACS API |
 | Last updated | `Meter MACS Home Last Updated` | Timestamp sensor showing when the integration last refreshed successfully |
-| Electricity cost per kWh | `Meter MACS Home Electricity Cost Per kWh` | Derived from the portal tariff/session data with a 5% uplift applied in code |
+| Electricity cost per kWh | `Meter MACS Home Electricity Cost Per kWh` | Derived from the portal tariff/session data using the VAT implied by the portal's incl/excl VAT cost fields (currently 0%) |
 
 Balance sensor attributes:
 - `meter_id`
@@ -162,7 +162,7 @@ logger:
 - Meter MACS is a UK service, and the integration is currently marked for `GB` in `hacs.json` for HACS publication.
 - Balance currency is not always available from the JSON API path. In those cases Home Assistant may not show a unit for the balance sensor.
 - The cost-per-kWh sensor currently reports `GBP/kWh` in code, even if the upstream account data is for a different region or currency.
-- The cost-per-kWh value currently applies a fixed `5%` uplift in code.
+- The cost-per-kWh value uses the VAT implied by the portal's incl/excl VAT cost fields, with no fixed uplift.
 - The electricity supply switch does not yet confirm the true remote state after a toggle request.
 - This repository includes a small automated test suite for repository metadata and core parsing/control helpers.
 
