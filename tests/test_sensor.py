@@ -86,6 +86,16 @@ def _install_homeassistant_stubs() -> None:
 
         update_coordinator.CoordinatorEntity = CoordinatorEntity
 
+    device_registry = sys.modules.setdefault(
+        "homeassistant.helpers.device_registry",
+        types.ModuleType("homeassistant.helpers.device_registry"),
+    )
+    if not hasattr(device_registry, "DeviceInfo"):
+        class DeviceInfo(dict):
+            pass
+
+        device_registry.DeviceInfo = DeviceInfo
+
 
 def _load_module(module_name: str):
     _install_homeassistant_stubs()

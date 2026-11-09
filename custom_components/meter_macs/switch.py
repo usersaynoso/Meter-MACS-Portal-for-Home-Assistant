@@ -6,13 +6,14 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import MeterMacsCoordinator
+from .device import build_meter_device_info
 from .api import MeterApi, Meter, SupplyActionError
 from .helpers import (
-    build_meter_device_key,
     coordinator_refresh_time_attribute,
     format_meter_display_name,
     infer_socket_power_state,
@@ -65,14 +66,13 @@ class MeterMacsSupplySwitch(CoordinatorEntity[MeterMacsCoordinator], SwitchEntit
         self._attr_name = f"Meter MACS {self._display_name} Electricity Supply Switch"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def is_on(self) -> bool:

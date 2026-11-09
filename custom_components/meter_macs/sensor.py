@@ -7,13 +7,14 @@ from zoneinfo import ZoneInfo
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import MeterMacsCoordinator
+from .device import build_meter_device_info
 from .api import Meter
 from .helpers import (
-    build_meter_device_key,
     coordinator_refresh_time_attribute,
     format_meter_display_name,
 )
@@ -87,14 +88,13 @@ class MeterMacsBalanceSensor(CoordinatorEntity[MeterMacsCoordinator], SensorEnti
         self._attr_name = f"Meter MACS {self._display_name} Balance"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self) -> Optional[float]:
@@ -142,14 +142,13 @@ class MeterMacsCostPerKwhSensor(CoordinatorEntity[MeterMacsCoordinator], SensorE
         self._attr_name = f"Meter MACS {self._display_name} Electricity Cost Per kWh"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self) -> Optional[float]:
@@ -201,14 +200,13 @@ class MeterMacsImportedEnergySensor(CoordinatorEntity[MeterMacsCoordinator], Sen
         self._attr_name = f"Meter MACS {self._display_name} Energy Imported From Grid"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self) -> Optional[float]:
@@ -252,14 +250,13 @@ class MeterMacsBalanceUpdatedSensor(CoordinatorEntity[MeterMacsCoordinator], Sen
         self._attr_name = f"Meter MACS {self._display_name} Balance Updated"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self) -> str | None:
@@ -306,14 +303,13 @@ class MeterMacsLastUpdatedSensor(CoordinatorEntity[MeterMacsCoordinator], Sensor
         self._attr_name = f"Meter MACS {self._display_name} Last Updated"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self):
@@ -357,14 +353,13 @@ class MeterMacsSafetyTrippedSensor(CoordinatorEntity[MeterMacsCoordinator], Sens
         self._attr_name = f"Meter MACS {self._display_name} Safety Tripped"
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, build_meter_device_key(self._entry.entry_id, self._meter_id))},
-            "name": f"Meter MACS {self._display_name}",
-            "manufacturer": "Meter MACS",
-            "model": "Electricity Asset",
-            "serial_number": str(self._asset_id or self._meter_id),
-        }
+    def device_info(self) -> DeviceInfo:
+        return build_meter_device_info(
+            self._entry.entry_id,
+            self._meter_id,
+            self._display_name,
+            self._asset_id,
+        )
 
     @property
     def native_value(self) -> str:
