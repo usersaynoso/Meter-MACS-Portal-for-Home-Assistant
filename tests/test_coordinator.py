@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import sys
 import types
@@ -125,3 +125,51 @@ def test_update_data_surfaces_auth_error_without_html_fallback(monkeypatch) -> N
         pass
     else:
         raise AssertionError("ConfigEntryAuthFailed was not raised")
+
+
+def test_update_data_keeps_last_reading_between_sessions(monkeypatch) -> None:
+    coordinator = COORDINATOR.MeterMacsCoordinator(
+        hass=types.SimpleNamespace(),
+        client=_DummyClient(),
+        update_interval=timedelta(seconds=60),
+    )
+    reading_date = datetime(2026, 11, 9, 18, 57, tzinfo=timezone.utc)
+    responses = [
+        [API.Meter("CRT_WM_3378", "Boat", 3.62, None, 15387.16, reading_date)],
+        [API.Meter("CRT_WM_3378", "Boat", 3.57, None, 0.0, None)],
+        [API.Meter("CRT_WM_3378", "Boat", 3.57, None, None, None)],
+        [API.Meter("CRT_WM_3378", "Boat", 3.56, None, 15387.31, None)],
+    ]
+
+    async def fake_fetch_meters(_selected_meter_ids=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr(coordinator._api, "fetch_meters", fake_fetch_meters)
+
+    first = asyncio.run(coordinator._async_update_data())[0]
+    gap = asyncio.run(coordinator._async_update_data())[0]
+    missing = asyncio.run(coordinator._async_update_data())[0]
+    after = asyncio.run(coordinator._async_update_data())[0]
+
+    assert first.imported_energy_kwh == 15387.16
+    assert gap.imported_energy_kwh == 15387.16
+    assert gap.balance_reading_date == reading_date
+    assert gap.balance == 3.57
+    assert missing.imported_energy_kwh == 15387.16
+    assert after.imported_energy_kwh == 15387.31
+
+
+def test_update_data_reports_unknown_when_first_reading_is_zero(monkeypatch) -> None:
+    coordinator = COORDINATOR.MeterMacsCoordinator(
+        hass=types.SimpleNamespace(),
+        client=_DummyClient(),
+        update_interval=timedelta(seconds=60),
+    )
+
+    async def fake_fetch_meters(_selected_meter_ids=None):
+        return [API.Meter("CRT_WM_3378", "Boat", 3.57, None, 0.0, None)]
+
+    monkeypatch.setattr(coordinator._api, "fetch_meters", fake_fetch_meters)
+
+    meter = asyncio.run(coordinator._async_update_data())[0]
+    assert meter.imported_energy_kwh is None
