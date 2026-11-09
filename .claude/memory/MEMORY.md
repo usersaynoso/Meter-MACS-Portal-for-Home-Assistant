@@ -1,0 +1,3 @@
+- [Release needs pre-release flag cleared](release-needs-prerelease-flag-cleared.md) - commit-and-push makes pre-releases; clear it so HACS sees the new version
+- [Running Meter MACS tests](running-meter-macs-tests.md) - temp venv command and the 3 known pre-existing failures
+- [Checking HA version compatibility](checking-ha-version-compatibility.md) - contributors blog URL and reading core source at a tag

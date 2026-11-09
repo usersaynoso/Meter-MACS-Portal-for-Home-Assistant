@@ -8,3 +8,4 @@
 - When asked to bump a GitHub Release, write or update the release message in plain, easy-to-understand language for non-technical users. Avoid jargon, explain what changed and what the user should notice, and include a small touch of humour plus relevant emojis.
 - Do not report success after a version bump until all of the following are true: the commit is pushed, the matching `vX.Y.Z` git tag is pushed, and `https://api.github.com/repos/usersaynoso/Meter-MACS-Portal-for-Home-Assistant/releases/latest` returns that same `tag_name`.
 - If the latest release API still shows the previous version, keep going and fix the tag/release instead of stopping at the commit or push step.
+- Read `.claude/memory/MEMORY.md` before working here. It indexes notes from earlier sessions: how to run the tests and which failures were already there, how to release without leaving a pre-release behind, and how to check compatibility with a new Home Assistant version.
