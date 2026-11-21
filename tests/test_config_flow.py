@@ -143,6 +143,7 @@ def _load_module(module_name: str):
         api_module.MeterApi = MeterApi
         api_module.MeterMacsClient = MeterMacsClient
         api_module.normalize_session_token = lambda raw: (raw or "").strip()
+        api_module.SESSION_COOKIE_NAME = "__Secure-meter-macs.session_token"
 
     full_name = f"custom_components.meter_macs.{module_name}"
     spec = importlib.util.spec_from_file_location(full_name, PACKAGE_ROOT / f"{module_name}.py")

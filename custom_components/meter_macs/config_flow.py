@@ -19,7 +19,8 @@ from .const import (
     CONF_SELECTED_METERS,
     CONF_SESSION_TOKEN,
 )
-from .api import Meter, MeterApi, MeterMacsClient, AuthError, normalize_session_token
+from .api import Meter, MeterApi, MeterMacsClient, AuthError, SESSION_COOKIE_NAME, normalize_session_token
+from .const import BASE_URL
 from .helpers import format_meter_display_name
 from .intervals import (
     resolve_scan_interval_seconds,
@@ -28,6 +29,10 @@ from .intervals import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _setup_placeholders(**extra: str) -> Dict[str, str]:
+    return {"portal_url": BASE_URL, "cookie_name": SESSION_COOKIE_NAME, **extra}
 
 
 def _validate_interval(value: int) -> int:
@@ -73,7 +78,12 @@ class MeterMacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema({
             vol.Required(CONF_SESSION_TOKEN): str,
         })
-        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders=_setup_placeholders(),
+        )
 
     async def async_step_reauth(self, entry_data: Dict[str, Any]) -> FlowResult:
         return await self.async_step_reauth_confirm()
@@ -105,7 +115,7 @@ class MeterMacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="reauth_confirm",
             data_schema=data_schema,
             errors=errors,
-            description_placeholders={"email": expected_email or "your account"},
+            description_placeholders=_setup_placeholders(email=expected_email or "your account"),
         )
 
     @staticmethod
