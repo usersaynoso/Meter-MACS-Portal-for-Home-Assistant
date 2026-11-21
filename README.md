@@ -18,13 +18,13 @@ Until this repository is accepted into the default HACS list, install it as a cu
 6. Restart Home Assistant.
 7. Go to `Settings -> Devices & Services -> Add Integration`.
 8. Search for `Meter MACS`.
-9. Enter your Meter MACS portal email address and password.
+9. Paste your portal session cookie (see [Getting your portal session cookie](#getting-your-portal-session-cookie)).
 
 If HACS cached an older invalid version before these repository changes, remove the custom repository entry and add it again so HACS refreshes the metadata and available versions.
 
 ## What This Integration Does
 
-- Authenticates against the Meter MACS portal with your existing portal credentials
+- Connects to the Meter MACS portal using a session you sign in to in your own browser
 - Discovers electricity meters from the account session API when available
 - Falls back to dashboard HTML scraping if the JSON API is unavailable
 - Creates Home Assistant entities for meter balance, imported energy, balance update time, integration refresh time, and electricity cost per kWh
@@ -39,9 +39,12 @@ If HACS cached an older invalid version before these repository changes, remove 
 The integration currently uses a coordinator-based polling model.
 
 Authentication flow:
-- It first attempts JSON sign-in against `/api/auth/sign-in/email`
-- If that path fails, it falls back to detecting and submitting an HTML login form
-- After login, it tries to collect meter data from known Meter MACS API endpoints
+- The portal's sign-in form is protected by Cloudflare Turnstile, so the integration does not sign in by itself and does not store your password
+- You sign in in your browser and give the integration the portal session cookie
+- The integration sends that cookie with each request and checks the session with `/api/auth/get-session` every few hours, which also stops the portal expiring an in-use session
+- If the portal sends back a refreshed session cookie, it is saved automatically
+- If the session stops working (expired, or you signed out of every device), Home Assistant shows a re-authenticate prompt asking for a fresh cookie
+- With a working session, it collects meter data from known Meter MACS API endpoints
 - If API discovery fails, it attempts to parse meter data from the web dashboard HTML
 
 Refresh behavior:
@@ -111,17 +114,23 @@ This repository is currently structured for manual installation.
 4. Open `Settings -> Devices & Services`.
 5. Select `Add Integration`.
 6. Search for `Meter MACS`.
-7. Enter your Meter MACS portal email address and password.
+7. Paste your portal session cookie (see [Getting your portal session cookie](#getting-your-portal-session-cookie)).
 
 ## Configuration
 
 ### Initial setup
 
-The config flow asks for:
-- `email`
-- `password`
+The config flow asks for one thing: your portal session cookie. The integration reads your account email from the portal and uses it as the unique identifier, so the same account cannot be added twice.
 
-The integration uses the account email as the unique identifier, so the same account cannot be added multiple times through the UI.
+### Getting your portal session cookie
+
+1. Sign in at [portal.meter-macs.com](https://portal.meter-macs.com) in a desktop browser. Tick "remember me" if the form offers it.
+2. Open the developer tools (`F12`, or `Cmd+Option+I` on a Mac).
+3. Go to **Application -> Cookies** in Chrome or Edge, or **Storage -> Cookies** in Firefox and Safari, and select `https://portal.meter-macs.com`.
+4. Find the cookie named `__Secure-meter-macs.session_token` and copy its value.
+5. Paste it into Home Assistant.
+
+You can also paste the whole cookie line or `name=value` pair; the integration picks out the session value. Signing out of the portal in that browser ends the session, so close the tab instead of signing out. If you added the integration before this change, Home Assistant asks you to re-authenticate once with a session cookie, and the old saved password is removed.
 
 ### Options
 
@@ -138,7 +147,7 @@ Validation rules:
 The integration includes a Home Assistant diagnostics handler.
 
 Current diagnostics output includes:
-- Redacted account and password indicators
+- Redacted account indicators, plus whether a session cookie or an old password is saved
 - Integration version, selected meter options, and scan interval context
 - Login/session status, including whether Meter MACS auth cookies are present
 - Coordinator refresh times and the latest captured exception
@@ -158,7 +167,7 @@ logger:
 
 - This integration depends on private portal endpoints and dashboard markup that are outside Home Assistant's control.
 - If Meter MACS changes its authentication flow, field names, API responses, or dashboard structure, the integration may stop working until it is updated.
-- CAPTCHA, MFA, or additional interactive login checks are not supported.
+- The integration cannot get past the portal's Cloudflare Turnstile check, so it never signs in by itself. When a session ends you need to paste a fresh cookie.
 - Meter MACS is a UK service, and the integration is currently marked for `GB` in `hacs.json` for HACS publication.
 - Balance currency is not always available from the JSON API path. In those cases Home Assistant may not show a unit for the balance sensor.
 - The cost-per-kWh sensor currently reports `GBP/kWh` in code, even if the upstream account data is for a different region or currency.
@@ -172,7 +181,7 @@ logger:
 | --- | --- |
 | [`custom_components/meter_macs/__init__.py`](custom_components/meter_macs/__init__.py) | Integration setup and config entry lifecycle |
 | [`custom_components/meter_macs/config_flow.py`](custom_components/meter_macs/config_flow.py) | UI setup, reauthentication, and options flow |
-| [`custom_components/meter_macs/api.py`](custom_components/meter_macs/api.py) | Portal login, API access, HTML fallback parsing, and supply control |
+| [`custom_components/meter_macs/api.py`](custom_components/meter_macs/api.py) | Portal session handling, API access, HTML fallback parsing, and supply control |
 | [`custom_components/meter_macs/coordinator.py`](custom_components/meter_macs/coordinator.py) | Shared polling coordinator |
 | [`custom_components/meter_macs/sensor.py`](custom_components/meter_macs/sensor.py) | Balance and cost-per-kWh sensors |
 | [`custom_components/meter_macs/switch.py`](custom_components/meter_macs/switch.py) | Electricity supply switch entity |

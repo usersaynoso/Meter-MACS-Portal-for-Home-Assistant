@@ -3,7 +3,7 @@
 Home Assistant custom integration for Meter MACS prepaid electricity accounts.
 
 This package:
-- Signs in with your Meter MACS portal credentials
+- Connects with a portal session you sign in to in your browser (the portal's Turnstile check blocks automatic sign-in)
 - Discovers meters from the portal API when available
 - Falls back to dashboard scraping when needed
 - Creates balance, imported-energy, balance-updated, last-updated, and cost-per-kWh sensors, plus supply switches where supported
@@ -20,7 +20,7 @@ Add `https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant` to HAC
 2. Restart Home Assistant.
 3. Go to `Settings -> Devices & Services -> Add Integration`.
 4. Search for `Meter MACS`.
-5. Enter your Meter MACS email address and password.
+5. Paste your portal session cookie (`__Secure-meter-macs.session_token`). The root `README.md` explains how to copy it.
 6. Optionally adjust the refresh interval in integration options.
 
 ## Notes
@@ -28,7 +28,7 @@ Add `https://github.com/usersaynoso/Meter-MACS-Portal-for-Home-Assistant` to HAC
 - Default refresh interval: `120` seconds
 - Minimum refresh interval: `30` seconds
 - Reloading the integration performs an immediate refresh
-- Reauthentication is supported through Home Assistant
+- When the session expires, Home Assistant asks you to re-authenticate with a fresh cookie
 - The supply switch is optimistic and does not yet confirm the true portal state after a toggle
 - The integration depends on Meter MACS portal/API behavior and may require updates if the portal changes
 - Brand assets are bundled locally for Home Assistant `2026.3+`

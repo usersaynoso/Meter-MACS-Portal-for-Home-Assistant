@@ -17,8 +17,9 @@ from .const import (
     CONF_SCAN_INTERVAL_MINUTES,
     CONF_SCAN_INTERVAL_SECONDS,
     CONF_SELECTED_METERS,
+    CONF_SESSION_TOKEN,
 )
-from .api import Meter, MeterApi, MeterMacsClient, AuthError
+from .api import Meter, MeterApi, MeterMacsClient, AuthError, normalize_session_token
 from .helpers import format_meter_display_name
 from .intervals import (
     resolve_scan_interval_seconds,
@@ -39,70 +40,73 @@ def _validate_interval(value: int) -> int:
 class MeterMacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
-    def __init__(self) -> None:
-        self._email: Optional[str] = None
-        self._password: Optional[str] = None
+    async def _async_check_session(self, raw_token: str) -> tuple[Optional[MeterMacsClient], Dict[str, str]]:
+        errors: Dict[str, str] = {}
+        token = normalize_session_token(raw_token)
+        if not token:
+            return None, {"base": "invalid_session"}
+        session = async_get_clientsession(self.hass)
+        client = MeterMacsClient(session=session, session_token=token)
+        try:
+            await client.ensure_logged_in()
+        except AuthError:
+            errors["base"] = "invalid_session"
+        except Exception:  # noqa: BLE001
+            errors["base"] = "cannot_connect"
+        return (None if errors else client), errors
 
     async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         errors: Dict[str, str] = {}
 
         if user_input is not None:
-            email = user_input.get("email", "")
-            password = user_input.get("password", "")
-
-            # Use email as unique id
-            await self.async_set_unique_id(email)
-            self._abort_if_unique_id_configured()
-
-            session = async_get_clientsession(self.hass)
-            client = MeterMacsClient(session=session, email=email, password=password)
-            try:
-                # Validate credentials
-                await client.ensure_logged_in()
-            except AuthError:
-                errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
-                errors["base"] = "cannot_connect"
-            else:
-                return self.async_create_entry(title="Meter MACS", data={"email": email, "password": password})
+            client, errors = await self._async_check_session(user_input.get(CONF_SESSION_TOKEN, ""))
+            if client is not None:
+                email = client.user_email or ""
+                # Email is the unique id, the same as entries made before sessions were used.
+                await self.async_set_unique_id(email or None)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title="Meter MACS",
+                    data={"email": email, CONF_SESSION_TOKEN: client.session_token},
+                )
 
         data_schema = vol.Schema({
-            vol.Required("email", default=(user_input or {}).get("email", "")): str,
-            vol.Required("password", default=(user_input or {}).get("password", "")): str,
+            vol.Required(CONF_SESSION_TOKEN): str,
         })
-
         return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
 
     async def async_step_reauth(self, entry_data: Dict[str, Any]) -> FlowResult:
-        self._email = entry_data.get("email")
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input: Optional[Dict[str, Any]] = None) -> FlowResult:
         errors: Dict[str, str] = {}
+        current = self._get_reauth_entry()
+        expected_email = (current.data.get("email") or "") if isinstance(current, ConfigEntry) else ""
 
         if user_input is not None:
-            password = user_input.get("password", "")
-            session = async_get_clientsession(self.hass)
-            client = MeterMacsClient(session=session, email=self._email or "", password=password)
-            try:
-                await client.ensure_logged_in()
-            except AuthError:
-                errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
-                errors["base"] = "cannot_connect"
-            else:
-                # Update existing entry with new password
-                current = self._get_reauth_entry()
-                if isinstance(current, ConfigEntry):
-                    new_data = {"email": self._email or "", "password": password}
+            client, errors = await self._async_check_session(user_input.get(CONF_SESSION_TOKEN, ""))
+            if client is not None:
+                email = client.user_email or expected_email
+                if expected_email and email and email.lower() != expected_email.lower():
+                    errors["base"] = "wrong_account"
+                elif isinstance(current, ConfigEntry):
+                    # Drop any password saved by older versions; it can no longer be used.
+                    new_data = {"email": email, CONF_SESSION_TOKEN: client.session_token}
                     self.hass.config_entries.async_update_entry(current, data=new_data)
                     await self.hass.config_entries.async_reload(current.entry_id)
-                return self.async_abort(reason="reauth_successful")
+                    return self.async_abort(reason="reauth_successful")
+                else:
+                    return self.async_abort(reason="reauth_successful")
 
         data_schema = vol.Schema({
-            vol.Required("password"): str,
+            vol.Required(CONF_SESSION_TOKEN): str,
         })
-        return self.async_show_form(step_id="reauth_confirm", data_schema=data_schema, errors=errors)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={"email": expected_email or "your account"},
+        )
 
     @staticmethod
     @callback
@@ -174,8 +178,7 @@ class MeterMacsOptionsFlowHandler(config_entries.OptionsFlow):
         session = async_get_clientsession(self.hass)
         client = MeterMacsClient(
             session=session,
-            email=self._config_entry.data.get("email", ""),
-            password=self._config_entry.data.get("password", ""),
+            session_token=self._config_entry.data.get(CONF_SESSION_TOKEN, ""),
         )
         api = MeterApi(client)
         try:

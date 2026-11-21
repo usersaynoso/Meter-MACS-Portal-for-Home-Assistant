@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin
+import time
+from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import quote, urljoin
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -28,7 +29,34 @@ _LOGGER = logging.getLogger(__name__)
 
 _AUTH_FAILURE_STATUSES = {401, 403}
 _AUTH_COOKIE_PREFIX = "__Secure-meter-macs."
-_SIGN_IN_PATH = "/api/auth/sign-in/email"
+SESSION_COOKIE_NAME = f"{_AUTH_COOKIE_PREFIX}session_token"
+_SESSION_REVALIDATE_SECONDS = 6 * 60 * 60
+_SESSION_TOKEN_RE = re.compile(
+    r"(?:^|[;\s])(?:__Secure-meter-macs\.)?session_token=([^;\s]+)",
+    re.IGNORECASE,
+)
+
+
+def normalize_session_token(raw: Any) -> str:
+    """Turn whatever the user pasted into the session cookie value.
+
+    Accepts the bare cookie value, a "name=value" pair, or a whole Cookie
+    header copied from the browser. A value shown URL-decoded in the browser's
+    developer tools is encoded again so it matches what the browser sends.
+    """
+    if not isinstance(raw, str):
+        return ""
+    text = raw.strip()
+    if text.lower().startswith("cookie:"):
+        text = text[len("cookie:"):].strip()
+    match = _SESSION_TOKEN_RE.search(text)
+    if match:
+        text = match.group(1)
+    text = text.strip().strip('"').strip("'")
+    if "%" not in text:
+        text = quote(text, safe="._-~")
+    return text
+
 
 
 class AuthError(Exception):
@@ -60,51 +88,74 @@ class Meter:
 
 
 class MeterMacsClient:
-    def __init__(self, session: aiohttp.ClientSession, email: str, password: str) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        session_token: str,
+        on_session_token_changed: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self._session = session
-        self._email = email
-        self._password = password
         self._base_url = BASE_URL.rstrip("/")
+        self._session_token = normalize_session_token(session_token)
+        self._on_session_token_changed = on_session_token_changed
         self._logged_in = False
+        self._last_validated: float | None = None
         self._auth_cookie_header: str | None = None
         self._auth_cookie_names: list[str] = []
+        self._set_auth_cookie()
+        self.user_email: str | None = None
         self.last_login_status: int | None = None
         self.last_login_error: str | None = None
         self.last_session_validated: bool | None = None
         self.last_auth_failure: str | None = None
 
+    @property
+    def session_token(self) -> str:
+        return self._session_token
+
+    def _set_auth_cookie(self) -> None:
+        if self._session_token:
+            self._auth_cookie_header = f"{SESSION_COOKIE_NAME}={self._session_token}"
+            self._auth_cookie_names = [SESSION_COOKIE_NAME]
+        else:
+            self._auth_cookie_header = None
+            self._auth_cookie_names = []
+
     async def ensure_logged_in(self) -> None:
-        if self._logged_in:
-            return
-        await self._login()
+        """Check the saved portal session still works.
+
+        The portal's sign-in form is protected by Cloudflare Turnstile, so the
+        integration cannot sign in by itself. It reuses a session the user
+        created in their browser and checks it now and then, which also keeps
+        the session from expiring while Home Assistant is using it.
+        """
+        if self._logged_in and self._last_validated is not None:
+            if time.monotonic() - self._last_validated < _SESSION_REVALIDATE_SECONDS:
+                return
+        await self._check_session()
 
     async def reauthenticate(self) -> None:
         self._logged_in = False
-        await self._login()
+        await self._check_session()
 
-    def _clear_auth_cookies_from_session(self) -> None:
-        cookie_jar = getattr(self._session, "cookie_jar", None)
-        if cookie_jar is None:
+    async def _check_session(self) -> None:
+        self._logged_in = False
+        self.last_login_error = None
+        if not self._session_token:
+            self.last_login_error = "No portal session saved"
+            raise AuthError(self.last_login_error)
+        if await self._validate_session():
+            self._logged_in = True
+            self._last_validated = time.monotonic()
             return
-        clear_domain = getattr(cookie_jar, "clear_domain", None)
-        if callable(clear_domain):
-            try:
-                clear_domain("portal.meter-macs.com")
-            except Exception:  # noqa: BLE001
-                _LOGGER.debug("Unable to clear Meter MACS cookies from session jar", exc_info=True)
+        self.last_login_error = "The saved portal session has expired or was signed out"
+        raise AuthError(self.last_login_error)
 
     def _request_headers(self, headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         request_headers = dict(headers or {})
         if self._auth_cookie_header:
             request_headers.setdefault("Cookie", self._auth_cookie_header)
         return request_headers
-
-    def _login_headers(self) -> Dict[str, str]:
-        return {
-            "Accept": "application/json, text/plain, */*",
-            "Origin": self._base_url,
-            "Referer": f"{self._base_url}/login",
-        }
 
     async def _get(self, path: str) -> aiohttp.ClientResponse:
         url = urljoin(self._base_url + "/", path.lstrip("/"))
@@ -127,126 +178,27 @@ class MeterMacsClient:
         )
         return resp
 
-    async def _login(self) -> None:
-        self._logged_in = False
-        self._auth_cookie_header = None
-        self._auth_cookie_names = []
-        self.last_login_status = None
-        self.last_login_error = None
-        self.last_session_validated = None
-        self.last_auth_failure = None
-        self._clear_auth_cookies_from_session()
-        # Preferred auth: Better Auth email sign-in endpoint
-        try:
-            payload = {"email": self._email, "password": self._password, "rememberMe": False}
-            resp = await self._session.post(
-                urljoin(self._base_url + "/", _SIGN_IN_PATH.lstrip("/")),
-                json=payload,
-                headers=self._login_headers(),
-                allow_redirects=True,
-            )
-            self.last_login_status = resp.status
-            if resp.status == 200:
-                try:
-                    body = await resp.json(content_type=None)
-                except Exception:  # noqa: BLE001
-                    body = {}
-                self._capture_auth_cookies(resp)
-                if self._is_successful_login_payload(body) and await self._validate_session():
-                    self._logged_in = True
-                    _LOGGER.debug("Login successful via /api/auth/sign-in/email")
-                    return
-                self.last_login_error = "Sign-in response did not create a usable session"
-            elif resp.status in _AUTH_FAILURE_STATUSES:
-                self.last_login_error = await self._auth_error_message(resp)
-        except Exception as err:  # noqa: BLE001
-            self.last_login_error = str(err)
-
-        # Fallback: try to reach dashboard; if redirected to login, attempt to submit form
-        resp = await self._get("/dashboard")
-        text = await resp.text()
-        if resp.status == 200 and not self._looks_like_login_page(text) and await self._validate_session():
-            _LOGGER.debug("Already logged in (dashboard accessible)")
-            self._logged_in = True
+    def _capture_refreshed_session_token(self, resp: aiohttp.ClientResponse) -> None:
+        """Keep the session token the portal sends back when it extends a session."""
+        headers = getattr(resp, "headers", None)
+        if headers is None:
             return
-
-        login_candidates = ["/login", "/signin", "/auth/login", "/"]
-        login_html = text
-        for candidate in login_candidates:
+        cookies = SimpleCookie()
+        for header in headers.getall("Set-Cookie", []):
             try:
-                resp2 = await self._get(candidate)
-                login_html = await resp2.text()
-                if self._looks_like_login_page(login_html):
-                    break
+                cookies.load(header)
             except Exception:  # noqa: BLE001
                 continue
-
-        form_info = self._extract_login_form(login_html)
-        if form_info is None:
-            raise AuthError("Unable to locate login form")
-
-        action, form_data, headers = form_info
-        email_key = self._guess_email_field(form_data)
-        password_key = self._guess_password_field(form_data)
-        if not email_key or not password_key:
-            raise AuthError("Unable to identify form fields for email/password")
-
-        form_data[email_key] = self._email
-        form_data[password_key] = self._password
-
-        resp3 = await self._post(action, data=form_data, headers=headers)
-        self._capture_auth_cookies(resp3)
-        _ = await resp3.text()
-
-        check = await self._get("/dashboard")
-        check_text = await check.text()
-        if (
-            check.status == 200
-            and not self._looks_like_login_page(check_text)
-            and await self._validate_session()
-        ):
-            self._logged_in = True
-            _LOGGER.debug("Login successful via HTML form fallback")
+        morsel = cookies.get(SESSION_COOKIE_NAME)
+        if morsel is None or not morsel.value or morsel.value == self._session_token:
             return
-        raise AuthError("Invalid authentication or login failed")
-
-    async def _auth_error_message(self, resp: aiohttp.ClientResponse) -> str:
-        try:
-            payload = await _read_json_response(resp)
-        except ScrapeError:
-            return f"Authentication failed with status {resp.status}"
-        if isinstance(payload, dict):
-            code = payload.get("code")
-            message = payload.get("message")
-            if code and message:
-                return f"{code}: {message}"
-            if message:
-                return str(message)
-            if code:
-                return str(code)
-        return f"Authentication failed with status {resp.status}"
-
-    def _capture_auth_cookies(self, resp: aiohttp.ClientResponse) -> None:
-        cookies = SimpleCookie()
-        for header in resp.headers.getall("Set-Cookie", []):
-            cookies.load(header)
-        values = [
-            f"{key}={morsel.value}"
-            for key, morsel in cookies.items()
-            if key.startswith(_AUTH_COOKIE_PREFIX)
-        ]
-        if not values:
-            return
-        self._auth_cookie_names = list(cookies.keys())
-        self._auth_cookie_header = "; ".join(values)
-
-    def _is_successful_login_payload(self, body: Any) -> bool:
-        return (
-            isinstance(body, dict)
-            and isinstance(body.get("user"), dict)
-            and isinstance(body.get("token"), str)
-            and bool(self._auth_cookie_header)
-        )
+        self._session_token = morsel.value
+        self._set_auth_cookie()
+        if self._on_session_token_changed is not None:
+            try:
+                self._on_session_token_changed(self._session_token)
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Unable to save refreshed Meter MACS session", exc_info=True)
 
     async def _validate_session(self) -> bool:
         resp = await self._session.get(
@@ -254,9 +206,7 @@ class MeterMacsClient:
             headers=self._request_headers(),
             allow_redirects=True,
         )
-        if resp.status in _AUTH_FAILURE_STATUSES:
-            self.last_session_validated = False
-            return False
+        self.last_login_status = resp.status
         if resp.status != 200:
             self.last_session_validated = False
             return False
@@ -265,7 +215,13 @@ class MeterMacsClient:
         except ScrapeError:
             self.last_session_validated = False
             return False
-        self.last_session_validated = isinstance(payload, dict) and isinstance(payload.get("user"), dict)
+        user = payload.get("user") if isinstance(payload, dict) else None
+        self.last_session_validated = isinstance(user, dict)
+        if self.last_session_validated:
+            email = user.get("email")
+            if isinstance(email, str) and email:
+                self.user_email = email
+            self._capture_refreshed_session_token(resp)
         return self.last_session_validated
 
     def _looks_like_login_page(self, html: str) -> bool:
@@ -273,66 +229,6 @@ class MeterMacsClient:
         # Heuristics: presence of a password input usually indicates a login form
         pwd = soup.find("input", {"type": "password"})
         return pwd is not None
-
-    def _extract_login_form(self, html: str) -> Optional[Tuple[str, Dict[str, Any], Dict[str, str]]]:
-        soup = BeautifulSoup(html, "html.parser")
-        # Choose the first form that contains a password field
-        form = None
-        for f in soup.find_all("form"):
-            if f.find("input", {"type": "password"}):
-                form = f
-                break
-        if not form:
-            return None
-
-        action = form.get("action") or "/login"
-        action = action if action.startswith("http") else urljoin(self._base_url + "/", action)
-
-        data: Dict[str, Any] = {}
-        for inp in form.find_all("input"):
-            name = inp.get("name")
-            if not name:
-                continue
-            value = inp.get("value", "")
-            data[name] = value
-
-        headers = {}
-        # Anti-CSRF tokens are typically included as hidden inputs and do not require special headers
-        # but a Referer sometimes helps
-        headers["Referer"] = action
-
-        return action, data, headers
-
-    def _guess_email_field(self, data: Dict[str, Any]) -> Optional[str]:
-        candidates = [
-            "email",
-            "username",
-            "user",
-            "login",
-            "identity",
-            "user[email]",
-            "user[username]",
-        ]
-        lowered = {k.lower(): k for k in data.keys()}
-        for key in candidates:
-            if key in lowered:
-                return lowered[key]
-        # Fallback: any input whose name contains email
-        for k in data.keys():
-            if "email" in k.lower() or "user" == k.lower():
-                return k
-        return None
-
-    def _guess_password_field(self, data: Dict[str, Any]) -> Optional[str]:
-        candidates = ["password", "pass", "pwd", "user[password]"]
-        lowered = {k.lower(): k for k in data.keys()}
-        for key in candidates:
-            if key in lowered:
-                return lowered[key]
-        for k in data.keys():
-            if "pass" in k.lower():
-                return k
-        return None
 
     async def fetch_dashboard(self) -> str:
         await self.ensure_logged_in()

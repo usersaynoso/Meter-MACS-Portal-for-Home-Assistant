@@ -3,24 +3,29 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configure Meter MACS",
+        "title": "Connect to Meter MACS",
+        "description": "The Meter MACS portal now blocks automatic sign-in, so sign in at portal.meter-macs.com in your web browser first. Then open the browser's developer tools, go to Application (Storage in Firefox) > Cookies > https://portal.meter-macs.com, and copy the value of the cookie named __Secure-meter-macs.session_token. Paste it below.",
         "data": {
-          "email": "Email address",
-          "password": "Password"
+          "session_token": "Portal session cookie"
         }
       },
       "reauth_confirm": {
-        "title": "Reauthenticate",
-        "description": "Please re-enter your password.",
+        "title": "Sign in to Meter MACS again",
+        "description": "The saved portal session for {email} has expired or no longer works. The Meter MACS portal now blocks automatic sign-in, so sign in at portal.meter-macs.com in your web browser first. Then open the browser's developer tools, go to Application (Storage in Firefox) > Cookies > https://portal.meter-macs.com, and copy the value of the cookie named __Secure-meter-macs.session_token. Paste it below.",
         "data": {
-          "password": "Password"
+          "session_token": "Portal session cookie"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid authentication",
+      "invalid_session": "That session cookie did not work. Sign in to the portal again in your browser and copy a fresh one.",
+      "wrong_account": "That session belongs to a different Meter MACS account.",
       "cannot_connect": "Cannot connect",
       "unknown": "Unknown error"
+    },
+    "abort": {
+      "already_configured": "This Meter MACS account is already set up.",
+      "reauth_successful": "Meter MACS is connected again."
     }
   },
   "options": {

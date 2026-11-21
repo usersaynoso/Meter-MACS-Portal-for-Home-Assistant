@@ -13,6 +13,7 @@ from .intervals import (
 DOMAIN = "meter_macs"
 
 CONF_SELECTED_METERS = "selected_meters"
+CONF_SESSION_TOKEN = "session_token"
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
 

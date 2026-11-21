@@ -130,10 +130,10 @@ def _load_module(module_name: str):
                 return []
 
         class MeterMacsClient:
-            def __init__(self, session, email: str, password: str) -> None:
+            def __init__(self, session, session_token: str, on_session_token_changed=None) -> None:
                 self.session = session
-                self.email = email
-                self.password = password
+                self.session_token = session_token
+                self.user_email = "user@example.com"
 
             async def ensure_logged_in(self) -> None:
                 return None
@@ -142,6 +142,7 @@ def _load_module(module_name: str):
         api_module.Meter = Meter
         api_module.MeterApi = MeterApi
         api_module.MeterMacsClient = MeterMacsClient
+        api_module.normalize_session_token = lambda raw: (raw or "").strip()
 
     full_name = f"custom_components.meter_macs.{module_name}"
     spec = importlib.util.spec_from_file_location(full_name, PACKAGE_ROOT / f"{module_name}.py")
@@ -157,7 +158,7 @@ ConfigEntry = sys.modules["homeassistant.config_entries"].ConfigEntry
 
 
 def test_config_flow_registers_options_flow() -> None:
-    entry = ConfigEntry(data={"email": "user@example.com", "password": "secret"}, options={})
+    entry = ConfigEntry(data={"email": "user@example.com", "session_token": "tok"}, options={})
 
     options_flow = CONFIG_FLOW.MeterMacsConfigFlow.async_get_options_flow(entry)
 

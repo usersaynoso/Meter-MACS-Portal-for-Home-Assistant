@@ -5,7 +5,8 @@ from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -15,6 +16,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     CONF_SELECTED_METERS,
+    CONF_SESSION_TOKEN,
 )
 from .api import MeterMacsClient
 from .coordinator import MeterMacsCoordinator
@@ -36,13 +38,28 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
 
-    email: str = entry.data.get("email", "")
-    password: str = entry.data.get("password", "")
+    session_token: str = entry.data.get(CONF_SESSION_TOKEN, "")
+    if not session_token:
+        # Entries made before the portal added Turnstile only hold a password,
+        # which the integration can no longer use. Ask for a browser session.
+        raise ConfigEntryAuthFailed("Meter MACS now needs a portal session from your browser")
 
     scan_seconds = resolve_scan_interval_seconds(entry.options)
     selected_meter_ids = selected_meter_ids_from_options(entry.options)
 
-    client = MeterMacsClient(session=session, email=email, password=password)
+    @callback
+    def _save_session_token(new_token: str) -> None:
+        if entry.data.get(CONF_SESSION_TOKEN) != new_token:
+            hass.config_entries.async_update_entry(
+                entry,
+                data={**entry.data, CONF_SESSION_TOKEN: new_token},
+            )
+
+    client = MeterMacsClient(
+        session=session,
+        session_token=session_token,
+        on_session_token_changed=_save_session_token,
+    )
 
     coordinator = MeterMacsCoordinator(
         hass=hass,

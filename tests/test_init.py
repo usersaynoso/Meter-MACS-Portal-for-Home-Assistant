@@ -41,6 +41,18 @@ def _load_module():
             pass
 
         ha_core.HomeAssistant = HomeAssistant
+    if not hasattr(ha_core, "callback"):
+        ha_core.callback = lambda func: func
+
+    ha_exceptions = sys.modules.setdefault(
+        "homeassistant.exceptions",
+        types.ModuleType("homeassistant.exceptions"),
+    )
+    if not hasattr(ha_exceptions, "ConfigEntryAuthFailed"):
+        class ConfigEntryAuthFailed(Exception):
+            pass
+
+        ha_exceptions.ConfigEntryAuthFailed = ConfigEntryAuthFailed
 
     helpers = sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
     if not hasattr(helpers, "__path__"):
@@ -94,10 +106,10 @@ def _load_module():
     api_module = types.ModuleType("custom_components.meter_macs.api")
 
     class MeterMacsClient:
-        def __init__(self, session, email: str, password: str) -> None:
+        def __init__(self, session, session_token: str, on_session_token_changed=None) -> None:
             self.session = session
-            self.email = email
-            self.password = password
+            self.session_token = session_token
+            self.on_session_token_changed = on_session_token_changed
 
     api_module.MeterMacsClient = MeterMacsClient
     sys.modules["custom_components.meter_macs.api"] = api_module
@@ -149,9 +161,9 @@ class _DummyHass:
 
 
 class _DummyEntry:
-    def __init__(self, options: dict) -> None:
+    def __init__(self, options: dict, data: dict | None = None) -> None:
         self.entry_id = "entry-1"
-        self.data = {"email": "user@example.com", "password": "secret"}
+        self.data = data if data is not None else {"email": "user@example.com", "session_token": "tok"}
         self.options = options
 
 
@@ -188,3 +200,16 @@ def test_async_setup_entry_uses_minutes_option_override(monkeypatch) -> None:
     asyncio.run(MODULE.async_setup_entry(hass, entry))
 
     assert MeterMacsCoordinator.instances[0].update_interval.total_seconds() == 300
+
+
+def test_async_setup_entry_asks_for_reauth_when_only_a_password_is_saved() -> None:
+    hass = _DummyHass()
+    entry = _DummyEntry({}, data={"email": "user@example.com", "password": "secret"})
+    auth_failed = sys.modules["homeassistant.exceptions"].ConfigEntryAuthFailed
+
+    try:
+        asyncio.run(MODULE.async_setup_entry(hass, entry))
+    except auth_failed:
+        pass
+    else:
+        raise AssertionError("ConfigEntryAuthFailed was not raised")

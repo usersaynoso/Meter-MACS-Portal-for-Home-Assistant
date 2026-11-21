@@ -93,97 +93,61 @@ class _FakeHeaders:
         return value if isinstance(value, list) else [value]
 
 
-class _CookieLoginSession:
-    def __init__(self) -> None:
+class _SessionCookieSession:
+    def __init__(self, valid_token: str = "tok.sig%3D", refreshed_token: str | None = None) -> None:
+        self.valid_token = valid_token
+        self.refreshed_token = refreshed_token
         self.get_headers: list[dict[str, str]] = []
-        self.post_headers: list[dict[str, str]] = []
-        self.cookie_jar = _FakeCookieJar()
+        self.posts: list[str] = []
 
-    async def post(
-        self,
-        url: str,
-        *,
-        json: dict,
-        headers: dict[str, str],
-        allow_redirects: bool,
-    ) -> _FakeResponse:
-        assert url.endswith("/api/auth/sign-in/email")
-        self.post_headers.append(headers)
-        return _FakeResponse(
-            200,
-            '{"redirect":false,"token":"session-token","user":{"id":"user-1"}}',
-            {
-                "Set-Cookie": [
-                    "__Secure-meter-macs.session_token=session-token; Path=/; Secure; HttpOnly",
-                    "__Secure-meter-macs.dont_remember=true; Path=/; Secure",
-                    "__Secure-meter-macs.session_data=session-data; Path=/; Secure",
-                ]
-            },
-        )
+    async def post(self, url: str, **kwargs) -> _FakeResponse:
+        self.posts.append(url)
+        return _FakeResponse(400, '{"code":"TURNSTILE_VERIFICATION_FAILED"}')
 
     async def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _FakeResponse:
         self.get_headers.append(headers)
-        if url.endswith("/api/auth/get-session") and "session_data=session-data" in headers.get("Cookie", ""):
-            return _FakeResponse(200, '{"user":{"id":"user-1","sites":[]}}')
+        cookie = headers.get("Cookie", "")
+        if url.endswith("/api/auth/get-session") and cookie == f"__Secure-meter-macs.session_token={self.valid_token}":
+            set_cookie = {}
+            if self.refreshed_token:
+                set_cookie = {
+                    "Set-Cookie": [
+                        f"__Secure-meter-macs.session_token={self.refreshed_token}; Path=/; Secure; HttpOnly",
+                        "__Secure-meter-macs.session_data=cache; Path=/; Secure",
+                    ]
+                }
+            return _FakeResponse(200, '{"user":{"id":"user-1","email":"user@example.com"}}', set_cookie)
         return _FakeResponse(200, "null")
 
 
-class _FakeCookieJar:
-    def __init__(self) -> None:
-        self.cleared_domains: list[str] = []
-
-    def clear_domain(self, domain: str) -> None:
-        self.cleared_domains.append(domain)
-
-
-def test_login_reuses_captured_better_auth_cookies_when_session_cookie_jar_is_empty() -> None:
-    session = _CookieLoginSession()
-    client = API.MeterMacsClient(session=session, email="user@example.com", password="secret")
+def test_session_cookie_login_validates_without_posting_sign_in() -> None:
+    session = _SessionCookieSession()
+    client = API.MeterMacsClient(session=session, session_token="tok.sig%3D")
 
     asyncio.run(client.ensure_logged_in())
 
     assert client._logged_in is True
     assert client.last_session_validated is True
-    assert session.cookie_jar.cleared_domains == ["portal.meter-macs.com"]
-    assert session.post_headers[-1]["Origin"] == "https://portal.meter-macs.com"
-    assert session.post_headers[-1]["Referer"] == "https://portal.meter-macs.com/login"
-    assert sorted(client._auth_cookie_names) == [
-        "__Secure-meter-macs.dont_remember",
-        "__Secure-meter-macs.session_data",
-        "__Secure-meter-macs.session_token",
-    ]
-    assert session.get_headers[-1]["Cookie"] == (
-        "__Secure-meter-macs.session_token=session-token; "
-        "__Secure-meter-macs.dont_remember=true; "
-        "__Secure-meter-macs.session_data=session-data"
-    )
+    assert client.user_email == "user@example.com"
+    assert session.posts == []
+    assert session.get_headers[-1]["Cookie"] == "__Secure-meter-macs.session_token=tok.sig%3D"
 
 
-class _DashboardShellSession:
-    cookie_jar = _FakeCookieJar()
+def test_session_cookie_login_skips_revalidation_until_due() -> None:
+    session = _SessionCookieSession()
+    client = API.MeterMacsClient(session=session, session_token="tok.sig%3D")
 
-    async def post(
-        self,
-        url: str,
-        *,
-        json: dict,
-        headers: dict[str, str],
-        allow_redirects: bool,
-    ) -> _FakeResponse:
-        return _FakeResponse(401, '{"code":"INVALID_EMAIL_OR_PASSWORD","message":"Invalid email or password"}')
+    asyncio.run(client.ensure_logged_in())
+    asyncio.run(client.ensure_logged_in())
+    assert len(session.get_headers) == 1
 
-    async def get(self, url: str, *, headers: dict[str, str], allow_redirects: bool) -> _FakeResponse:
-        if url.endswith("/api/auth/get-session"):
-            return _FakeResponse(200, "null")
-        return _FakeResponse(200, "<html><body><div id='dashboard-shell'></div></body></html>")
+    client._last_validated -= API._SESSION_REVALIDATE_SECONDS + 1
+    asyncio.run(client.ensure_logged_in())
+    assert len(session.get_headers) == 2
 
 
-def test_login_does_not_accept_dashboard_shell_without_valid_session() -> None:
-    client = API.MeterMacsClient(
-        session=_DashboardShellSession(),
-        email="user@example.com",
-        password="secret",
-    )
+def test_expired_session_cookie_raises_auth_error() -> None:
+    client = API.MeterMacsClient(session=_SessionCookieSession(), session_token="old-token")
 
     try:
         asyncio.run(client.ensure_logged_in())
@@ -194,7 +158,48 @@ def test_login_does_not_accept_dashboard_shell_without_valid_session() -> None:
 
     assert client._logged_in is False
     assert client.last_session_validated is False
-    assert client.last_login_error == "INVALID_EMAIL_OR_PASSWORD: Invalid email or password"
+    assert client.last_login_error == "The saved portal session has expired or was signed out"
+
+
+def test_missing_session_cookie_raises_auth_error_without_requests() -> None:
+    session = _SessionCookieSession()
+    client = API.MeterMacsClient(session=session, session_token="  ")
+
+    try:
+        asyncio.run(client.ensure_logged_in())
+    except AuthError:
+        pass
+    else:
+        raise AssertionError("AuthError was not raised")
+    assert session.get_headers == []
+
+
+def test_refreshed_session_token_is_kept_and_reported() -> None:
+    saved: list[str] = []
+    session = _SessionCookieSession(refreshed_token="tok.new%3D")
+    client = API.MeterMacsClient(
+        session=session,
+        session_token="tok.sig%3D",
+        on_session_token_changed=saved.append,
+    )
+
+    asyncio.run(client.ensure_logged_in())
+
+    assert saved == ["tok.new%3D"]
+    assert client.session_token == "tok.new%3D"
+    assert client._request_headers()["Cookie"] == "__Secure-meter-macs.session_token=tok.new%3D"
+
+
+def test_normalize_session_token_accepts_common_paste_formats() -> None:
+    normalize = API.normalize_session_token
+    assert normalize("  tok.sig%3D  ") == "tok.sig%3D"
+    assert normalize("__Secure-meter-macs.session_token=tok.sig%3D") == "tok.sig%3D"
+    assert normalize(
+        "Cookie: other=1; __Secure-meter-macs.session_token=tok.sig%3D; __Secure-meter-macs.session_data=x"
+    ) == "tok.sig%3D"
+    # Value copied URL-decoded from developer tools is encoded again.
+    assert normalize("tok.ab+c/d=") == "tok.ab%2Bc%2Fd%3D"
+    assert normalize(None) == ""
 
 
 class _RetryClient:

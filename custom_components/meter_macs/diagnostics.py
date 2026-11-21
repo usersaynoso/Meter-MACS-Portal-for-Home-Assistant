@@ -83,6 +83,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "version": _integration_version(),
         "email": "***",
         "has_password": bool(entry.data.get("password")),
+        "has_session_token": bool(entry.data.get("session_token")),
         "options": {
             "selected_meters_mode": "all"
             if selected_meter_ids is None
